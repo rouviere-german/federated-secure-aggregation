@@ -5,17 +5,17 @@
     "platform": "Windows-10-10.0.19045-SP0",
     "processor": "Intel64 Family 6 Model 158 Stepping 10, GenuineIntel",
     "python": "3.12.14",
-    "timestamp": "2026-09-20T21:47:36+00:00"
+    "timestamp": "2026-09-20T21:55:07+00:00"
   },
   "metrics": {
     "bytes_per_client_20": 10761.5,
     "bytes_per_client_5": 5391.0,
-    "dropout_overhead_ratio": 0.8867,
+    "dropout_overhead_ratio": 0.9107,
     "exact_fraction": 1.0,
-    "max_round_seconds": 0.3189,
-    "seconds_20_clients": 0.3189,
-    "seconds_5_clients": 0.0265,
-    "wall_seconds": 0.881
+    "max_round_seconds": 0.327,
+    "seconds_20_clients": 0.327,
+    "seconds_5_clients": 0.0263,
+    "wall_seconds": 0.909
   },
   "rows": [
     {
@@ -24,7 +24,7 @@
       "clients": 3.0,
       "dropouts": 0.0,
       "exact": 1.0,
-      "seconds": 0.0271,
+      "seconds": 0.0259,
       "survivors": 3.0,
       "threshold": 2.0
     },
@@ -44,7 +44,7 @@
       "clients": 5.0,
       "dropouts": 0.0,
       "exact": 1.0,
-      "seconds": 0.0265,
+      "seconds": 0.0263,
       "survivors": 5.0,
       "threshold": 3.0
     },
@@ -54,7 +54,7 @@
       "clients": 5.0,
       "dropouts": 2.0,
       "exact": 1.0,
-      "seconds": 0.0242,
+      "seconds": 0.0256,
       "survivors": 3.0,
       "threshold": 3.0
     },
@@ -64,7 +64,7 @@
       "clients": 10.0,
       "dropouts": 0.0,
       "exact": 1.0,
-      "seconds": 0.0839,
+      "seconds": 0.0856,
       "survivors": 10.0,
       "threshold": 6.0
     },
@@ -74,7 +74,7 @@
       "clients": 10.0,
       "dropouts": 4.0,
       "exact": 1.0,
-      "seconds": 0.0774,
+      "seconds": 0.0824,
       "survivors": 6.0,
       "threshold": 6.0
     },
@@ -84,7 +84,7 @@
       "clients": 20.0,
       "dropouts": 0.0,
       "exact": 1.0,
-      "seconds": 0.3189,
+      "seconds": 0.327,
       "survivors": 20.0,
       "threshold": 11.0
     },
@@ -94,7 +94,7 @@
       "clients": 20.0,
       "dropouts": 9.0,
       "exact": 1.0,
-      "seconds": 0.2918,
+      "seconds": 0.304,
       "survivors": 11.0,
       "threshold": 11.0
     }

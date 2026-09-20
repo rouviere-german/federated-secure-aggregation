@@ -5,7 +5,7 @@
     "platform": "Windows-10-10.0.19045-SP0",
     "processor": "Intel64 Family 6 Model 158 Stepping 10, GenuineIntel",
     "python": "3.12.14",
-    "timestamp": "2026-09-20T21:48:01+00:00"
+    "timestamp": "2026-09-20T21:55:32+00:00"
   },
   "metrics": {
     "clean_auc": 0.874501,
@@ -24,7 +24,7 @@
     "sign_flip2_auc": 0.867069,
     "sign_flip2_auc_drop": 0.007432,
     "sign_flip2_rejection_rate": 0.0,
-    "wall_seconds": 3.7
+    "wall_seconds": 3.78
   },
   "rows": [
     {
