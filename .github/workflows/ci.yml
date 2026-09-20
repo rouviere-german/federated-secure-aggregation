@@ -1,0 +1,306 @@
+# CI for the shared baseline. CI runs online; the local test suite, demo and bench run offline.
+#
+# Action pinning: actions are pinned to release tags and kept current by Dependabot
+# (.github/dependabot.yml, github-actions ecosystem). Before a repo is published, replace each tag
+# with the full commit SHA it points to and keep the tag as a trailing comment (for example with
+# `pinact run`): a tag can be moved, a SHA cannot. Verify the trivy-action tag in particular.
+# Container base images are pinned by digest in the Dockerfile.
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  UV_FROZEN: "1"
+  PYTHONHASHSEED: "0"
+  HYPOTHESIS_PROFILE: ci
+  PYTHON_VERSION: "3.12"
+
+jobs:
+  lint:
+    name: lint (ruff)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          enable-cache: true
+      - run: uv sync --frozen
+      - run: uv run ruff check .
+      - run: uv run ruff format --check .
+
+  typecheck:
+    name: typecheck (mypy --strict)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          enable-cache: true
+      - run: uv sync --frozen
+      - run: uv run mypy
+
+  test:
+    name: test (pytest, coverage floor 85%)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          enable-cache: true
+      - run: uv sync --frozen
+      - run: uv run pytest --cov --cov-report=term-missing --cov-report=xml
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage-xml
+          path: coverage.xml
+          if-no-files-found: ignore
+
+  bench:
+    name: bench (regression thresholds)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          enable-cache: true
+      - run: uv sync --frozen
+      # Micro-benchmarks plus the protocol's own regression gates. bench_secagg pins
+      # bit-for-bit exactness and bench_utility pins the secure-vs-plaintext AUC gap, so a
+      # regression in the primary pattern fails here and not only in the unit tests.
+      - run: uv run python bench/bench_baseline.py --check
+      - run: uv run python bench/bench_secagg.py --check
+      - run: uv run python bench/bench_utility.py --check
+      - run: uv run python bench/bench_poisoning.py --check
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: bench-results
+          path: bench/results/
+          if-no-files-found: ignore
+
+  audit:
+    name: audit (empirical privacy audit)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          enable-cache: true
+      - run: uv sync --frozen
+      # The DP claim, checked against the data rather than against the accountant. Fails if the
+      # audited epsilon's lower confidence bound exceeds the claimed epsilon for the correct
+      # implementation, or if any of the three broken variants is NOT flagged.
+      - run: uv run python bench/bench_audit.py --check
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: audit-results
+          path: bench/results/audit.json
+          if-no-files-found: ignore
+
+  baseline:
+    name: baseline (scripts/check_baseline.py)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - run: uv run --no-project python scripts/check_baseline.py
+
+  bandit:
+    name: bandit
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          enable-cache: true
+      - run: uv sync --frozen
+      - run: uv run bandit -c pyproject.toml -r src
+
+  semgrep:
+    name: semgrep (registry + repo rules)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - name: semgrep scan
+        run: >-
+          uvx --from "semgrep>=1.100,<2" semgrep scan
+          --config p/python
+          --config p/secrets
+          --config .semgrep/rules.yml
+          --error --metrics off
+
+  pip-audit:
+    name: pip-audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          enable-cache: true
+      # tasks.py exports the locked requirements (with hashes) and applies the reviewed ignore
+      # list from [tool.portfolio.audit] in pyproject.toml.
+      - run: uv run --no-project python tasks.py pip-audit
+
+  gitleaks:
+    name: gitleaks
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  docker:
+    name: docker (hadolint, build, smoke test, trivy, syft SBOM)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs: [lint, typecheck, test]
+    env:
+      IMAGE: federated-secure-aggregation:ci
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: hadolint/hadolint-action@v3.1.0
+        with:
+          dockerfile: Dockerfile
+      - uses: docker/setup-buildx-action@v3
+      - name: docker build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          load: true
+          push: false
+          tags: ${{ env.IMAGE }}
+      - name: container smoke test (HEALTHCHECK reports healthy)
+        run: |
+          docker run --detach --name app --read-only --tmpfs /tmp --cap-drop ALL \
+            --security-opt no-new-privileges --health-interval 3s "$IMAGE"
+          for _ in $(seq 1 30); do
+            status="$(docker inspect --format '{{.State.Health.Status}}' app)"
+            if [ "$status" = "healthy" ]; then
+              test "$(docker inspect --format '{{.Config.User}}' app)" = "10001:10001"
+              exit 0
+            fi
+            sleep 2
+          done
+          docker logs app
+          exit 1
+      - name: trivy image scan
+        uses: aquasecurity/trivy-action@0.32.0
+        with:
+          image-ref: ${{ env.IMAGE }}
+          format: table
+          exit-code: "1"
+          ignore-unfixed: true
+          vuln-type: os,library
+          severity: CRITICAL,HIGH
+      - name: syft CycloneDX SBOM
+        uses: anchore/sbom-action@v0
+        with:
+          image: ${{ env.IMAGE }}
+          format: cyclonedx-json
+          output-file: sbom.cdx.json
+          upload-artifact: false
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sbom-cyclonedx
+          path: sbom.cdx.json
+
+  compose:
+    name: compose (coordinator + operator + 5 silos, with dropouts)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs: [lint, typecheck, test]
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          enable-cache: true
+      - run: uv sync --frozen
+      - name: generate key material (never committed)
+        run: uv run python scripts/generate_identities.py --silos 5
+      - name: generate a transport API key
+        run: |
+          uv run federated-secure-aggregation generate-api-key > key.json
+          echo "APP_API_KEY=$(jq -r .api_key key.json)" >> "$GITHUB_ENV"
+          echo "APP_API_KEY_SHA256=$(jq -r .api_key_sha256 key.json)" >> "$GITHUB_ENV"
+          rm key.json
+      - name: bring the federation up
+        run: docker compose up --build --detach
+      - name: kill two silos mid-run
+        run: |
+          sleep 20
+          docker compose stop silo-00 silo-01
+      - name: the operator must still finish its rounds
+        run: |
+          docker compose wait operator
+          docker compose logs operator | tee operator.log
+          grep -q "rounds accepted" operator.log
+      - name: no silo container may hold another silo's key
+        run: |
+          listing=$(docker compose exec -T silo-02 ls /run/secrets | sort | xargs)
+          echo "silo-02 sees: $listing"
+          test "$listing" = "identity.json roster.json"
+      - name: tear down
+        if: always()
+        run: docker compose down --volumes --remove-orphans
