@@ -2,9 +2,9 @@
 
 Each byte of the secret gets its own degree ``t - 1`` polynomial whose constant term is that
 byte; share ``i`` is the vector of polynomial evaluations at ``x = i``. Reconstruction is
-Lagrange interpolation at ``x = 0``. Evaluation points start at 1, so no share equals the
-secret, and they are the *share index*, not the participant's identity, so the same code works
-whatever the participant ids look like.
+Lagrange interpolation at ``x = 0``. Evaluation points start at 1, and ``t >= 2`` is enforced
+in :func:`split`, so no share equals the secret; the points are the *share index*, not the
+participant's identity, so the same code works whatever the participant ids look like.
 
 Properties this guarantees, all exercised by tests:
 
@@ -28,7 +28,7 @@ import numpy.typing as npt
 
 from federated_secure_aggregation.crypto.field import add, div, eval_poly, mul
 
-__all__ = ["MAX_SHARES", "Share", "combine", "reconstruct_from", "split"]
+__all__ = ["MAX_SHARES", "Share", "combine", "interpolate", "reconstruct_from", "split"]
 
 MAX_SHARES = 255
 RandomBytes = Callable[[int], bytes]
@@ -58,9 +58,13 @@ def split(
     """Split ``secret`` into ``shares`` shares, any ``threshold`` of which reconstruct it."""
     if not secret:
         raise ValueError("secret must not be empty")
-    if not 1 <= threshold <= shares <= MAX_SHARES:
+    if threshold == 1:
+        # A degree-0 polynomial makes every share equal to the secret, which contradicts this
+        # module's stated contract. RoundConfig refuses t < 2 for the same reason.
+        raise ValueError("threshold must be >= 2; a 1-of-n scheme protects nothing")
+    if not 2 <= threshold <= shares <= MAX_SHARES:
         raise ValueError(
-            f"need 1 <= threshold <= shares <= {MAX_SHARES}, got threshold={threshold} "
+            f"need 2 <= threshold <= shares <= {MAX_SHARES}, got threshold={threshold} "
             f"shares={shares}"
         )
     n_bytes = len(secret)
@@ -84,9 +88,23 @@ def combine(shares: Iterable[Share]) -> bytes:
     must therefore enforce the threshold themselves and verify the result out of band (the
     protocol does this by checking reconstructed keys against their advertised public keys).
     """
+    return interpolate(list(shares), 0)
+
+
+def interpolate(shares: Iterable[Share], point: int) -> bytes:
+    """Evaluate the interpolating polynomial through ``shares`` at ``x = point``.
+
+    ``point = 0`` is the secret (that is what :func:`combine` asks for). Any other point is the
+    share that a holder at that index *should* have produced, which is how the coordinator
+    attributes a corrupted share once ``t`` good shares have pinned the polynomial down: with
+    ``t`` correct evaluations the degree ``t - 1`` polynomial is unique, so every other
+    evaluation is predicted exactly and a holder whose share differs lied.
+    """
     collected: list[Share] = list(shares)
     if not collected:
         raise ValueError("at least one share is required")
+    if not 0 <= point <= MAX_SHARES:
+        raise ValueError(f"evaluation point must be in 0..{MAX_SHARES}, got {point}")
     indices = [share.index for share in collected]
     if len(set(indices)) != len(indices):
         raise ValueError("shares must have distinct indices")
@@ -96,18 +114,19 @@ def combine(shares: Iterable[Share]) -> bytes:
 
     x = np.array(indices, dtype=np.uint8)
     y = np.stack([np.frombuffer(share.data, dtype=np.uint8) for share in collected])
-    secret = np.zeros(length, dtype=np.uint8)
+    value = np.zeros(length, dtype=np.uint8)
     for position in range(len(collected)):
         others = np.delete(x, position)
         if others.size:
-            # Lagrange basis at 0: prod_j x_j / (x_j - x_i); subtraction is XOR here.
-            numerator = _product(others)
+            # Lagrange basis at ``point``: prod_j (point - x_j) / (x_i - x_j); subtraction is
+            # XOR in GF(2^8), so both differences are plain XORs.
+            numerator = _product(add(others, np.uint8(point)))
             denominator = _product(add(others, x[position]))
             basis = np.uint8(div(numerator, denominator))
         else:
             basis = np.uint8(1)
-        secret = add(secret, mul(y[position], basis))
-    return bytes(secret)
+        value = add(value, mul(y[position], basis))
+    return bytes(value)
 
 
 def _product(values: npt.NDArray[np.uint8]) -> np.uint8:

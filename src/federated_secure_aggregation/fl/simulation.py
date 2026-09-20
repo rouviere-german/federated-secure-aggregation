@@ -451,6 +451,7 @@ class FederatedRun:
                     bytes_received=outcome.bytes_received,
                     duration_seconds=max(outcome.duration_seconds, 0.0),
                     reason=outcome.reason,
+                    corrupt_share_holders=list(result.corrupt_share_holders),
                 )
             )
 

@@ -141,10 +141,19 @@ class MessageBody(BaseModel):
 
 
 class KeyAdvertisement(MessageBody):
-    """A client's two per-round X25519 public keys."""
+    """A client's two per-round X25519 public keys, plus a commitment to its self-mask seed.
+
+    The commitment is what makes a *reconstructed* self-mask seed checkable. The mask key has a
+    natural commitment already -- its public half -- so a corrupted mask-key share is caught by
+    re-deriving the public key. A self-mask seed has no such public half, so without this field
+    a survivor could hand over a wrong seed share, silently corrupt the sum and have the round
+    rejected by the norm bound as if a client had poisoned it. See
+    :func:`~federated_secure_aggregation.secagg.masking.self_seed_commitment`.
+    """
 
     mask_public_key: B64Bytes = Field(min_length=32, max_length=32)
     wrap_public_key: B64Bytes = Field(min_length=32, max_length=32)
+    self_seed_commitment: B64Bytes = Field(min_length=32, max_length=32)
 
 
 class SignedMessage[BodyT: MessageBody](BaseModel):
@@ -224,6 +233,17 @@ class PairingSet(MessageBody):
         if len(set(mask_keys.values())) != len(mask_keys):
             raise ProtocolMessageError("two clients advertised the same mask key")
         return mask_keys, wrap_keys
+
+    def seed_commitments(self) -> dict[str, bytes]:
+        """Each participant's committed self-mask seed digest.
+
+        Only meaningful after :meth:`verified_keys` has returned without raising: that is what
+        checks each advertisement's signature, and this reads the same objects.
+        """
+        return {
+            client_id: advertisement.body.self_seed_commitment
+            for client_id, advertisement in self.advertisements.items()
+        }
 
 
 class ShareBundle(MessageBody):

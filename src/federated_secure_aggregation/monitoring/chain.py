@@ -59,6 +59,9 @@ class RoundRecord(BaseModel):
     bytes_received: int = Field(ge=0)
     duration_seconds: float = Field(ge=0)
     reason: str | None = None
+    # Survivors caught revealing a Shamir share off the sharing polynomial. This is the one
+    # misbehaviour the protocol *can* attribute, so the audit chain names it.
+    corrupt_share_holders: list[str] = Field(default_factory=list)
 
     def payload(self) -> dict[str, JsonValue]:
         return dict(self.model_dump(mode="json"))

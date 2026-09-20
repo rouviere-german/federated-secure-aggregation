@@ -107,6 +107,7 @@ class RoundOutcomeResponse(BaseModel):
     bytes_received: int
     digest: str
     reason: str | None = None
+    corrupt_share_holders: list[str] = Field(default_factory=list)
 
 
 class CoordinatorService:
@@ -197,6 +198,7 @@ class CoordinatorService:
                 bytes_received=result.bytes_received,
                 digest=result.digest(),
                 reason=result.reason,
+                corrupt_share_holders=list(result.corrupt_share_holders),
             ).model_dump(mode="json")
         raise AppError(409, "wrong_stage", f"round stage {stage} cannot be advanced")
 

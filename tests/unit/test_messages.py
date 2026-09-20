@@ -15,6 +15,7 @@ import pytest
 from pydantic import ValidationError
 
 from federated_secure_aggregation.crypto.keys import IdentityKeyPair, KeyAgreementKeyPair
+from federated_secure_aggregation.secagg.masking import self_seed_commitment
 from federated_secure_aggregation.secagg.messages import (
     MAX_BINARY_BYTES,
     KeyAdvertisement,
@@ -34,13 +35,18 @@ pytestmark = pytest.mark.unit
 
 NONCE = bytes(range(16))
 OTHER_NONCE = bytes(range(16, 32))
+SEED = bytes(range(32, 64))
 
 
 def _advertisement(
     identity: IdentityKeyPair, sender: str = "silo_00", round_id: int = 1, nonce: bytes = NONCE
 ) -> SignedMessage[KeyAdvertisement]:
     keys = KeyAgreementKeyPair.generate()
-    body = KeyAdvertisement(mask_public_key=keys.public_bytes, wrap_public_key=keys.public_bytes)
+    body = KeyAdvertisement(
+        mask_public_key=keys.public_bytes,
+        wrap_public_key=keys.public_bytes,
+        self_seed_commitment=self_seed_commitment(SEED, NONCE),
+    )
     return sign_message(
         body,
         kind=MessageKind.KEY_ADVERTISEMENT,
@@ -79,6 +85,7 @@ def test_a_modified_body_fails_verification() -> None:
             "body": KeyAdvertisement(
                 mask_public_key=KeyAgreementKeyPair.generate().public_bytes,
                 wrap_public_key=message.body.wrap_public_key,
+                self_seed_commitment=message.body.self_seed_commitment,
             )
         }
     )
@@ -182,7 +189,9 @@ def test_pairing_set_rejects_two_clients_sharing_a_mask_key() -> None:
     identities = {f"silo_{index:02d}": IdentityKeyPair.generate() for index in range(2)}
     shared = KeyAgreementKeyPair.generate()
     body = KeyAdvertisement(
-        mask_public_key=shared.public_bytes, wrap_public_key=shared.public_bytes
+        mask_public_key=shared.public_bytes,
+        wrap_public_key=shared.public_bytes,
+        self_seed_commitment=self_seed_commitment(SEED, NONCE),
     )
     advertisements = {
         name: sign_message(

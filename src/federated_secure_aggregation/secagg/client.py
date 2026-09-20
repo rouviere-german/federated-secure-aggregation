@@ -31,7 +31,11 @@ from federated_secure_aggregation.crypto.keys import (
 )
 from federated_secure_aggregation.crypto.prg import PRG_SEED_BYTES
 from federated_secure_aggregation.secagg.errors import ProtocolStateError
-from federated_secure_aggregation.secagg.masking import MaskDeriver, mask_vector
+from federated_secure_aggregation.secagg.masking import (
+    MaskDeriver,
+    mask_vector,
+    self_seed_commitment,
+)
 from federated_secure_aggregation.secagg.messages import (
     KeyAdvertisement,
     MaskedInput,
@@ -112,16 +116,21 @@ class SecAggClient:
             )
         mask_keys = KeyAgreementKeyPair.generate()
         wrap_keys = KeyAgreementKeyPair.generate()
+        self_mask_seed = self._random_bytes(PRG_SEED_BYTES)
         self._round = ClientRound(
             round_id=round_id,
             round_nonce=round_nonce,
             mask_keys=mask_keys,
             wrap_keys=wrap_keys,
-            self_mask_seed=self._random_bytes(PRG_SEED_BYTES),
+            self_mask_seed=self_mask_seed,
         )
         self._last_round_id = round_id
         body = KeyAdvertisement(
-            mask_public_key=mask_keys.public_bytes, wrap_public_key=wrap_keys.public_bytes
+            mask_public_key=mask_keys.public_bytes,
+            wrap_public_key=wrap_keys.public_bytes,
+            # Signed alongside the public keys, so the coordinator can check that a seed
+            # rebuilt from peers' shares is the seed this client actually used.
+            self_seed_commitment=self_seed_commitment(self_mask_seed, round_nonce),
         )
         return self._sign(MessageKind.KEY_ADVERTISEMENT, body)
 

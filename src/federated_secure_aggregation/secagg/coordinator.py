@@ -9,13 +9,15 @@ of secrets that would produce one.
 The round runs as a strict state machine::
 
     ADVERTISE_KEYS -> SHARE_KEYS -> MASKED_INPUT -> UNMASK -> AGGREGATE -> COMPLETED
-                                                                        \\-> REJECTED
-    (any stage below quorum)                                             -> FAILED
+                                                                        |-> REJECTED
+    (any stage below quorum, or a reconstruction that cannot be verified) -> FAILED
 
 Each stage closes when every expected client has answered or when its timeout elapses,
 whichever comes first, and a stage that closes below the threshold ``t`` fails the round rather
 than continuing with too few participants. Time comes from an injected monotonic clock, so
-timeout behaviour is tested deterministically rather than by sleeping.
+timeout behaviour is tested deterministically rather than by sleeping. Every path out of
+AGGREGATE reaches a terminal stage: a round that cannot finish must fail, never sit in a stage
+that no caller can advance past, or one bad share would deny every future round.
 
 Integrity controls applied on the way in: signature and context verification for every message,
 one message per client per stage (a second is refused, not overwritten), a declared-dimension
@@ -23,15 +25,23 @@ check, and a byte budget per round. Integrity control applied on the way out: th
 aggregate must satisfy ``||sum|| <= survivors * (clip_norm + quantization slack)``, otherwise
 the round is REJECTED and the caller keeps the previous model. Because the coordinator cannot
 inspect individual updates, that check is necessarily aggregate-level: it cannot say *which*
-client misbehaved. Attribution is a documented non-goal.
+client sent a bad **update**, and per-client attribution of updates is a documented non-goal.
+
+Revealed *shares* are a different matter and are attributed. Both secrets a survivor reveals
+are verifiable -- a dropout's mask key against its advertised public key, a survivor's
+self-mask seed against the commitment in its signed advertisement -- so a reconstruction that
+fails verification is retried on other subsets of the revealed shares, and every holder whose
+share does not lie on the recovered polynomial is named in ``corrupt_share_holders``.
 """
 
 from __future__ import annotations
 
+import hmac
+import itertools
 import math
 import os
 import time
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -39,15 +49,22 @@ import numpy as np
 import numpy.typing as npt
 
 from federated_secure_aggregation.core.canonical import canonical_json, sha256_hex
+from federated_secure_aggregation.core.logging import get_logger
 from federated_secure_aggregation.crypto import shamir
-from federated_secure_aggregation.crypto.keys import IdentityKeyPair, x25519_public_bytes
+from federated_secure_aggregation.crypto.keys import KEY_BYTES, IdentityKeyPair, x25519_public_bytes
 from federated_secure_aggregation.crypto.prg import PRG_SEED_BYTES
 from federated_secure_aggregation.secagg.errors import (
     AggregateRejectedError,
     ProtocolStateError,
     QuorumError,
+    SecAggError,
 )
-from federated_secure_aggregation.secagg.masking import MaskDeriver, reconstruct_aggregate
+from federated_secure_aggregation.secagg.masking import (
+    MaskDeriver,
+    MaskingError,
+    reconstruct_aggregate,
+    self_seed_commitment,
+)
 from federated_secure_aggregation.secagg.messages import (
     KeyAdvertisement,
     MaskedInput,
@@ -77,6 +94,13 @@ Clock = Callable[[], float]
 RandomBytes = Callable[[int], bytes]
 
 NONCE_BYTES = 16
+# How many ``t``-subsets of the revealed shares the coordinator will try before giving up on a
+# secret. Exhaustive for the cross-silo sizes this targets (10 subsets at n=5 t=3, 70 at n=8
+# t=4); beyond that the round fails, which is safe -- a failed round costs an update, not a
+# guarantee. Unbounded search would be a denial-of-service lever for a lying holder.
+MAX_RECOVERY_SUBSETS = 64
+
+_log = get_logger("federated_secure_aggregation.coordinator")
 
 
 @dataclass(frozen=True, slots=True)
@@ -122,6 +146,10 @@ class RoundResult:
     bytes_received: int
     duration_seconds: float
     reason: str | None = None
+    # Survivors whose revealed Shamir share did not lie on the sharing polynomial. Unlike a
+    # poisoned update, this failure class *is* attributable, so it is named rather than folded
+    # into an anonymous round-level rejection.
+    corrupt_share_holders: tuple[str, ...] = ()
 
     @property
     def accepted(self) -> bool:
@@ -135,6 +163,7 @@ class RoundResult:
             "survivors": list(self.survivors),
             "dropouts": list(self.dropouts),
             "excluded": list(self.excluded),
+            "corrupt_share_holders": list(self.corrupt_share_holders),
             "aggregate_sha256": (
                 sha256_hex(np.ascontiguousarray(self.aggregate, dtype="<f8").tobytes())
                 if self.aggregate is not None
@@ -450,24 +479,36 @@ class SecAggCoordinator:
         if pairing is None:  # pragma: no cover - guarded by the stage check
             raise ProtocolStateError("pairing set is missing")
         self._advance(state, RoundStage.AGGREGATE)
+        # The round is spent from here on, whatever happens next. Recording that before the
+        # reconstruction is what stops a single bad share from parking the state machine in
+        # AGGREGATE -- a stage no route can advance past and no ``start_round`` accepts as
+        # terminal, which would deny every future round on this process.
+        self._completed_round_ids.add(state.round_id)
 
-        mask_public_keys, _ = self._pairing_keys(pairing, state)
-        self_seeds = self._recover_self_seeds(state)
-        dropout_privates = self._recover_dropout_keys(state, mask_public_keys)
+        try:
+            mask_public_keys, _ = self._pairing_keys(pairing, state)
+            self_seeds, seed_liars = self._recover_self_seeds(state, pairing)
+            dropout_privates, key_liars = self._recover_dropout_keys(
+                state, pairing, mask_public_keys
+            )
+            deriver = MaskDeriver(round_nonce=state.nonce, dimension=self.config.dimension)
+            ring_sum = reconstruct_aggregate(
+                deriver,
+                {client: state.masked_inputs[client] for client in state.survivors},
+                mask_public_keys=mask_public_keys,
+                survivor_self_seeds=self_seeds,
+                dropout_mask_privates=dropout_privates,
+            )
+        except (SecAggError, ProtocolMessageError, MaskingError) as exc:
+            return self._fail(state, reason=str(exc))
 
-        deriver = MaskDeriver(round_nonce=state.nonce, dimension=self.config.dimension)
-        ring_sum = reconstruct_aggregate(
-            deriver,
-            {client: state.masked_inputs[client] for client in state.survivors},
-            mask_public_keys=mask_public_keys,
-            survivor_self_seeds=self_seeds,
-            dropout_mask_privates=dropout_privates,
-        )
+        liars = tuple(sorted(set(seed_liars) | set(key_liars)))
+        if liars:
+            _log.warning("corrupt_shares_attributed", round_id=state.round_id, holders=list(liars))
         aggregate = dequantize(ring_sum, self.scheme.scale)
         norm = float(np.linalg.norm(aggregate))
         bound = self.norm_bound(len(state.survivors))
         duration = self._clock() - state.started
-        self._completed_round_ids.add(state.round_id)
 
         if norm > bound:
             self._advance(state, RoundStage.REJECTED)
@@ -483,6 +524,7 @@ class SecAggCoordinator:
                 bytes_received=state.bytes_received,
                 duration_seconds=duration,
                 reason=str(AggregateRejectedError(norm, bound)),
+                corrupt_share_holders=liars,
             )
         self._advance(state, RoundStage.COMPLETED)
         return RoundResult(
@@ -496,6 +538,7 @@ class SecAggCoordinator:
             norm_bound=bound,
             bytes_received=state.bytes_received,
             duration_seconds=duration,
+            corrupt_share_holders=liars,
         )
 
     def norm_bound(self, survivors: int) -> float:
@@ -515,8 +558,13 @@ class SecAggCoordinator:
     def abandon(self, reason: str) -> RoundResult:
         """Give up on the current round (used when a stage times out below quorum)."""
         state = self._require_state()
-        self._advance(state, RoundStage.FAILED)
         self._completed_round_ids.add(state.round_id)
+        return self._fail(state, reason=reason)
+
+    def _fail(self, state: _RoundState, *, reason: str, liars: tuple[str, ...] = ()) -> RoundResult:
+        """Move the round to FAILED and describe it. Never raises, so no caller is left stuck."""
+        _log.warning("round_failed", round_id=state.round_id, reason=reason)
+        self._advance(state, RoundStage.FAILED)
         return RoundResult(
             round_id=state.round_id,
             stage=RoundStage.FAILED,
@@ -529,6 +577,7 @@ class SecAggCoordinator:
             bytes_received=state.bytes_received,
             duration_seconds=self._clock() - state.started,
             reason=reason,
+            corrupt_share_holders=liars,
         )
 
     # --- internals ---------------------------------------------------------------------
@@ -550,55 +599,113 @@ class SecAggCoordinator:
             self._client_keys, round_id=state.round_id, round_nonce=state.nonce
         )
 
-    def _recover_self_seeds(self, state: _RoundState) -> dict[str, bytes]:
-        pairing = state.pairing
-        if pairing is None:
-            raise ProtocolStateError("the pairing set has not been published yet")
+    def _holder_indices(self, state: _RoundState, pairing: PairingSet) -> dict[int, str]:
+        """Share index -> the survivor that answered the unmask request from it."""
+        return {pairing.share_index(holder): holder for holder in state.unmask_responses}
+
+    def _recover_self_seeds(
+        self, state: _RoundState, pairing: PairingSet
+    ) -> tuple[dict[str, bytes], tuple[str, ...]]:
+        """Rebuild every survivor's self-mask seed, checked against its signed commitment."""
+        commitments = pairing.seed_commitments()
+        holders = self._holder_indices(state, pairing)
         seeds: dict[str, bytes] = {}
+        liars: set[str] = set()
         for owner in state.survivors:
             shares = [
                 shamir.Share(pairing.share_index(holder), response.self_seed_shares[owner])
                 for holder, response in sorted(state.unmask_responses.items())
                 if owner in response.self_seed_shares
             ]
-            if len(shares) < self.config.threshold:
-                raise QuorumError(
-                    f"only {len(shares)} shares of {owner}'s self-mask seed, below threshold "
-                    f"{self.config.threshold}"
+            expected = commitments.get(owner)
+            if expected is None:  # pragma: no cover - the pairing set is built from survivors
+                raise ProtocolMessageError(f"{owner} advertised no self-mask seed commitment")
+
+            def valid(secret: bytes, commitment: bytes = expected) -> bool:
+                return len(secret) == PRG_SEED_BYTES and hmac.compare_digest(
+                    self_seed_commitment(secret, state.nonce), commitment
                 )
-            seed = shamir.combine(shares[: self.config.threshold])
-            if len(seed) != PRG_SEED_BYTES:
-                raise ProtocolMessageError(f"reconstructed seed for {owner} has the wrong length")
+
+            seed, bad = self._reconstruct_verified(
+                shares, holders, valid, owner=owner, what="self-mask seed"
+            )
             seeds[owner] = seed
-        return seeds
+            liars |= set(bad)
+        return seeds, tuple(sorted(liars))
 
     def _recover_dropout_keys(
-        self, state: _RoundState, mask_public_keys: Mapping[str, bytes]
-    ) -> dict[str, bytes]:
-        pairing = state.pairing
-        if pairing is None:
-            raise ProtocolStateError("the pairing set has not been published yet")
+        self,
+        state: _RoundState,
+        pairing: PairingSet,
+        mask_public_keys: Mapping[str, bytes],
+    ) -> tuple[dict[str, bytes], tuple[str, ...]]:
+        """Rebuild each dropout's mask private key, checked against its advertised public key."""
+        holders = self._holder_indices(state, pairing)
         privates: dict[str, bytes] = {}
+        liars: set[str] = set()
         for owner in state.dropouts:
             shares = [
                 shamir.Share(pairing.share_index(holder), response.mask_key_shares[owner])
                 for holder, response in sorted(state.unmask_responses.items())
                 if owner in response.mask_key_shares
             ]
-            if len(shares) < self.config.threshold:
-                raise QuorumError(
-                    f"only {len(shares)} shares of {owner}'s mask key, below threshold "
-                    f"{self.config.threshold}"
+            expected = mask_public_keys[owner]
+
+            def valid(secret: bytes, public: bytes = expected) -> bool:
+                return len(secret) == KEY_BYTES and hmac.compare_digest(
+                    x25519_public_bytes(secret), public
                 )
-            private = shamir.combine(shares[: self.config.threshold])
-            # The reconstruction is only trustworthy if it matches the signed advertisement.
-            # A wrong share (corrupt or malicious) would otherwise silently corrupt the sum.
-            if x25519_public_bytes(private) != mask_public_keys[owner]:
-                raise ProtocolMessageError(
-                    f"reconstructed mask key for {owner} does not match its advertised public key"
-                )
+
+            private, bad = self._reconstruct_verified(
+                shares, holders, valid, owner=owner, what="mask key"
+            )
             privates[owner] = private
-        return privates
+            liars |= set(bad)
+        return privates, tuple(sorted(liars))
+
+    def _reconstruct_verified(
+        self,
+        shares: Sequence[shamir.Share],
+        holders: Mapping[int, str],
+        is_valid: Callable[[bytes], bool],
+        *,
+        owner: str,
+        what: str,
+    ) -> tuple[bytes, tuple[str, ...]]:
+        """Reconstruct a secret from a ``t``-subset that verifies, and name the holders that lied.
+
+        Reconstructing from the first ``t`` shares and trusting the result is what turns one
+        lying survivor into a lost round: the sum is silently corrupted, the aggregate norm
+        bound rejects it, and the failure is reported as poisoning by nobody in particular.
+        Because both secrets are verifiable -- a seed against its committed digest, a mask key
+        against its advertised public key -- the coordinator can instead try further subsets
+        until one verifies. Once it does, the degree ``t - 1`` polynomial is pinned down, so
+        every remaining share is predicted exactly and any holder whose share differs is named.
+        """
+        threshold = self.config.threshold
+        if len(shares) < threshold:
+            raise QuorumError(
+                f"only {len(shares)} shares of {owner}'s {what}, below threshold {threshold}"
+            )
+        for attempt, subset in enumerate(itertools.combinations(shares, threshold)):
+            if attempt >= MAX_RECOVERY_SUBSETS:
+                break
+            secret = shamir.combine(subset)
+            if not is_valid(secret):
+                continue
+            chosen = {share.index for share in subset}
+            liars = tuple(
+                sorted(
+                    holders[share.index]
+                    for share in shares
+                    if share.index not in chosen
+                    and shamir.interpolate(subset, share.index) != share.data
+                )
+            )
+            return secret, liars
+        raise ProtocolMessageError(
+            f"no {threshold} of the {len(shares)} revealed shares reconstruct {owner}'s {what}"
+        )
 
     def _sign[T: (PairingSet, MaskingSet, SurvivorSet)](
         self, kind: MessageKind, body: T, state: _RoundState

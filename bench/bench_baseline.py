@@ -36,7 +36,11 @@ from federated_secure_aggregation.evaluation.report import (
 )
 from federated_secure_aggregation.ml.drift import DriftMonitor
 from federated_secure_aggregation.privacy.accountant import DEFAULT_ORDERS, RDPAccountant
-from federated_secure_aggregation.secagg.masking import MaskDeriver, mask_vector
+from federated_secure_aggregation.secagg.masking import (
+    MaskDeriver,
+    mask_vector,
+    self_seed_commitment,
+)
 from federated_secure_aggregation.secagg.messages import (
     KeyAdvertisement,
     MessageKind,
@@ -51,6 +55,7 @@ RESULTS = ROOT / "bench" / "results" / f"{BENCH}.json"
 THRESHOLDS = ROOT / "bench" / "thresholds.json"
 DIMENSION = 1_024
 NONCE = bytes(range(16))
+SEED = bytes(range(32, 64))
 
 
 def _timed(function: Callable[[], object], runs: int, warmup: int = 5) -> dict[str, float]:
@@ -130,7 +135,11 @@ def bench_quantize_encode() -> dict[str, float]:
 def _advertisement() -> tuple[object, bytes]:
     identity = IdentityKeyPair.generate()
     keys = KeyAgreementKeyPair.generate()
-    body = KeyAdvertisement(mask_public_key=keys.public_bytes, wrap_public_key=keys.public_bytes)
+    body = KeyAdvertisement(
+        mask_public_key=keys.public_bytes,
+        wrap_public_key=keys.public_bytes,
+        self_seed_commitment=self_seed_commitment(SEED, NONCE),
+    )
     message = sign_message(
         body,
         kind=MessageKind.KEY_ADVERTISEMENT,
@@ -145,7 +154,11 @@ def _advertisement() -> tuple[object, bytes]:
 def bench_message_sign() -> dict[str, float]:
     identity = IdentityKeyPair.generate()
     keys = KeyAgreementKeyPair.generate()
-    body = KeyAdvertisement(mask_public_key=keys.public_bytes, wrap_public_key=keys.public_bytes)
+    body = KeyAdvertisement(
+        mask_public_key=keys.public_bytes,
+        wrap_public_key=keys.public_bytes,
+        self_seed_commitment=self_seed_commitment(SEED, NONCE),
+    )
     return _timed(
         lambda: sign_message(
             body,

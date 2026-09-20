@@ -58,7 +58,7 @@ def test_eval_poly_rejects_one_dimensional_coefficients() -> None:
 
 @given(
     secret=SECRETS,
-    threshold=st.integers(min_value=1, max_value=6),
+    threshold=st.integers(min_value=2, max_value=6),
     extra=st.integers(min_value=0, max_value=4),
     data=st.data(),
 )
@@ -114,7 +114,38 @@ def test_split_validates_its_arguments() -> None:
     with pytest.raises(ValueError, match="threshold"):
         shamir.split(b"x", threshold=4, shares=3)
     with pytest.raises(ValueError, match="threshold"):
-        shamir.split(b"x", threshold=1, shares=256)
+        shamir.split(b"x", threshold=2, shares=256)
+
+
+def test_split_refuses_a_one_of_n_scheme() -> None:
+    """At ``t = 1`` the polynomial is degree 0, so every share *is* the secret.
+
+    The module docstring promises that no share equals the secret, and the protocol never asks
+    for ``t = 1`` (``RoundConfig`` refuses it too). Rejecting it here keeps the crypto module
+    honest on its own terms rather than relying on a caller upstream.
+    """
+    with pytest.raises(ValueError, match="1-of-n scheme protects nothing"):
+        shamir.split(b"secret", threshold=1, shares=5)
+
+
+def test_interpolate_recovers_every_share_and_the_secret() -> None:
+    """Interpolating the polynomial at share index ``i`` must return share ``i``.
+
+    This is what lets the coordinator attribute a corrupted share: once ``t`` good shares fix
+    the polynomial, every other holder's share is predicted exactly.
+    """
+    secret = bytes(range(32))
+    shares = shamir.split(secret, threshold=3, shares=6)
+    subset = shares[:3]
+    assert shamir.interpolate(subset, 0) == secret
+    for share in shares:
+        assert shamir.interpolate(subset, share.index) == share.data
+
+
+def test_interpolate_rejects_an_out_of_range_point() -> None:
+    shares = shamir.split(b"secret", threshold=2, shares=3)
+    with pytest.raises(ValueError, match="evaluation point"):
+        shamir.interpolate(shares[:2], 256)
 
 
 def test_split_rejects_a_short_random_source() -> None:

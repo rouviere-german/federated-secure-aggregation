@@ -40,6 +40,8 @@ from federated_secure_aggregation.secagg.quantize import RingArray, add_mod, sub
 
 __all__ = [
     "MASK_INFO",
+    "SEED_COMMITMENT_BYTES",
+    "SEED_COMMITMENT_INFO",
     "SELF_MASK_INFO",
     "SHARE_WRAP_INFO",
     "MaskDeriver",
@@ -48,15 +50,42 @@ __all__ = [
     "pair_sign",
     "plaintext_sum",
     "reconstruct_aggregate",
+    "self_seed_commitment",
 ]
 
 MASK_INFO = b"federated-secure-aggregation/pairwise-mask/v1"
 SELF_MASK_INFO = b"federated-secure-aggregation/self-mask/v1"
 SHARE_WRAP_INFO = b"federated-secure-aggregation/share-wrap/v1"
+SEED_COMMITMENT_INFO = b"federated-secure-aggregation/self-mask-commitment/v1"
+SEED_COMMITMENT_BYTES = 32
 
 
 class MaskingError(ValueError):
     """Masks cannot be derived or removed as requested."""
+
+
+def self_seed_commitment(seed: bytes, round_nonce: bytes) -> bytes:
+    """A hiding, binding commitment to a self-mask seed, published in the key advertisement.
+
+    Without this the coordinator has nothing to check a *reconstructed* self-mask seed against:
+    the advertisement carries only public keys, so a survivor that hands over a corrupted seed
+    share silently corrupts the sum, the aggregate norm bound then rejects the round, and a
+    share-integrity failure is misreported as poisoning by an unidentifiable client. With it,
+    the reconstruction is verifiable and the liar is attributable.
+
+    HKDF keyed by the *seed* and salted with the round nonce, under its own ``info`` label so
+    the commitment is domain-separated from the self-mask the same seed produces. Hiding
+    because the seed is 32 uniformly random bytes and HKDF is a PRF under an unknown key;
+    binding because finding a second seed with the same output is a collision. The nonce makes
+    the commitment fresh per round, so two rounds of the same silo are unlinkable through it.
+    """
+    if len(seed) != PRG_SEED_BYTES:
+        raise MaskingError(f"self-mask seed must be {PRG_SEED_BYTES} bytes")
+    if len(round_nonce) < 16:
+        raise MaskingError("round nonce must be at least 16 bytes")
+    return derive_key(
+        seed, salt=round_nonce, info=SEED_COMMITMENT_INFO, length=SEED_COMMITMENT_BYTES
+    )
 
 
 def pair_sign(own_id: str, peer_id: str) -> int:
