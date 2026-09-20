@@ -1,0 +1,94 @@
+{
+  "bench": "poisoning",
+  "machine": {
+    "cpu_count": 6,
+    "platform": "Windows-10-10.0.19045-SP0",
+    "processor": "Intel64 Family 6 Model 158 Stepping 10, GenuineIntel",
+    "python": "3.12.14",
+    "timestamp": "2026-09-20T21:48:01+00:00"
+  },
+  "metrics": {
+    "clean_auc": 0.874501,
+    "clean_mean_aggregate_norm": 1.4599,
+    "clean_rejection_rate": 0.0,
+    "norm_bound": 5.0,
+    "rejection_rate_scale10p0": 1.0,
+    "rejection_rate_scale1p5": 0.0,
+    "rejection_rate_scale2p0": 1.0,
+    "rejection_rate_scale3p0": 1.0,
+    "rejection_rate_scale40p0": 1.0,
+    "rejection_rate_scale5p0": 1.0,
+    "sign_flip1_auc": 0.870835,
+    "sign_flip1_auc_drop": 0.003666,
+    "sign_flip1_rejection_rate": 0.0,
+    "sign_flip2_auc": 0.867069,
+    "sign_flip2_auc_drop": 0.007432,
+    "sign_flip2_rejection_rate": 0.0,
+    "wall_seconds": 3.7
+  },
+  "rows": [
+    {
+      "attacker": "none",
+      "holdout_auc": 0.8745,
+      "mean_aggregate_norm": 1.4599,
+      "rejection_rate": 0.0,
+      "scale": 0.0
+    },
+    {
+      "attacker": "scaled",
+      "holdout_auc": 0.8756,
+      "mean_aggregate_norm": 1.3141,
+      "rejection_rate": 0.0,
+      "scale": 1.5
+    },
+    {
+      "attacker": "scaled",
+      "holdout_auc": 0.5,
+      "mean_aggregate_norm": 5.1473,
+      "rejection_rate": 1.0,
+      "scale": 2.0
+    },
+    {
+      "attacker": "scaled",
+      "holdout_auc": 0.5,
+      "mean_aggregate_norm": 6.3352,
+      "rejection_rate": 1.0,
+      "scale": 3.0
+    },
+    {
+      "attacker": "scaled",
+      "holdout_auc": 0.5,
+      "mean_aggregate_norm": 8.886,
+      "rejection_rate": 1.0,
+      "scale": 5.0
+    },
+    {
+      "attacker": "scaled",
+      "holdout_auc": 0.5,
+      "mean_aggregate_norm": 12.8577,
+      "rejection_rate": 1.0,
+      "scale": 10.0
+    },
+    {
+      "attacker": "scaled",
+      "holdout_auc": 0.5,
+      "mean_aggregate_norm": 14.7237,
+      "rejection_rate": 1.0,
+      "scale": 40.0
+    },
+    {
+      "attacker": "sign-flip x1",
+      "holdout_auc": 0.8708,
+      "mean_aggregate_norm": 1.8435,
+      "rejection_rate": 0.0,
+      "scale": 1.0
+    },
+    {
+      "attacker": "sign-flip x2",
+      "holdout_auc": 0.8671,
+      "mean_aggregate_norm": 2.0611,
+      "rejection_rate": 0.0,
+      "scale": 1.0
+    }
+  ]
+}

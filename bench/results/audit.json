@@ -1,0 +1,100 @@
+{
+  "bench": "audit",
+  "machine": {
+    "cpu_count": 6,
+    "platform": "Windows-10-10.0.19045-SP0",
+    "processor": "Intel64 Family 6 Model 158 Stepping 10, GenuineIntel",
+    "python": "3.12.14",
+    "timestamp": "2026-09-20T21:47:56+00:00"
+  },
+  "metrics": {
+    "audit_ceiling_mu": 5.2935,
+    "broken_variants_flagged": 3.0,
+    "claimed_epsilon": 6.8379,
+    "epsilon_low_average_sensitivity": 30.5234,
+    "epsilon_low_clip_after_noise": 3.7847,
+    "epsilon_low_correct": 3.7665,
+    "epsilon_low_no_clipping": 31.5666,
+    "epsilon_low_weak_noise": 28.0809,
+    "flagged_average_sensitivity": 1.0,
+    "flagged_clip_after_noise": 0.0,
+    "flagged_correct": 0.0,
+    "flagged_no_clipping": 1.0,
+    "flagged_weak_noise": 1.0,
+    "model_dimension": 1345.0,
+    "mu_hat_average_sensitivity": 4.9635,
+    "mu_hat_clip_after_noise": 1.1778,
+    "mu_hat_correct": 1.1736,
+    "mu_hat_no_clipping": 5.0902,
+    "mu_hat_weak_noise": 4.675,
+    "mu_recovery_ratio": 0.8571,
+    "n_canaries": 48.0,
+    "n_reference": 1024.0,
+    "rounds": 30.0,
+    "sound_variants_flagged": 0.0,
+    "theoretical_mu": 1.3693,
+    "wall_seconds": 3.4
+  },
+  "rows": [
+    {
+      "claimed_epsilon": 6.8379,
+      "epsilon_hat": 5.274,
+      "epsilon_low": 3.7665,
+      "expected_broken": false,
+      "flagged": false,
+      "holdout_auc": 0.6186,
+      "mu_hat": 1.1736,
+      "mu_low": 0.8778,
+      "theoretical_mu": 1.3693,
+      "variant": "correct"
+    },
+    {
+      "claimed_epsilon": 6.8379,
+      "epsilon_hat": 33.9406,
+      "epsilon_low": 31.5666,
+      "expected_broken": true,
+      "flagged": true,
+      "holdout_auc": 0.5922,
+      "mu_hat": 5.0902,
+      "mu_low": 4.8319,
+      "theoretical_mu": 1.3693,
+      "variant": "no_clipping"
+    },
+    {
+      "claimed_epsilon": 6.8379,
+      "epsilon_hat": 30.1577,
+      "epsilon_low": 28.0809,
+      "expected_broken": true,
+      "flagged": true,
+      "holdout_auc": 0.855,
+      "mu_hat": 4.675,
+      "mu_low": 4.4384,
+      "theoretical_mu": 1.3693,
+      "variant": "weak_noise"
+    },
+    {
+      "claimed_epsilon": 6.8379,
+      "epsilon_hat": 32.7676,
+      "epsilon_low": 30.5234,
+      "expected_broken": true,
+      "flagged": true,
+      "holdout_auc": 0.8592,
+      "mu_hat": 4.9635,
+      "mu_low": 4.716,
+      "theoretical_mu": 1.3693,
+      "variant": "average_sensitivity"
+    },
+    {
+      "claimed_epsilon": 6.8379,
+      "epsilon_hat": 5.296,
+      "epsilon_low": 3.7847,
+      "expected_broken": false,
+      "flagged": false,
+      "holdout_auc": 0.6127,
+      "mu_hat": 1.1778,
+      "mu_low": 0.8815,
+      "theoretical_mu": 1.3693,
+      "variant": "clip_after_noise"
+    }
+  ]
+}

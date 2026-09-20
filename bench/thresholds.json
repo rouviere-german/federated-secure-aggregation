@@ -1,0 +1,79 @@
+{
+  "_comment": [
+    "Regression thresholds enforced by `uv run python tasks.py bench` and by the CI bench job.",
+    "Latency limits are several times the numbers measured on the reference laptop, because",
+    "shared runners are noisy: they catch order-of-magnitude regressions, not small drifts.",
+    "Quality limits are tight, because each one is a statement the README makes: exactness is",
+    "required to be exact, the secure and plaintext paths are required to agree, all three",
+    "broken privacy variants are required to be flagged and neither sound variant may be.",
+    "See the README Results section for the measured values these bracket."
+  ],
+  "baseline": {
+    "pairwise_mask_1k.p95_us": { "max": 1500 },
+    "prg_expand_1k.p95_us": { "max": 200 },
+    "mask_vector_1k_10_peers.p95_us": { "max": 15000 },
+    "shamir_split_32b_5of10.p95_us": { "max": 1500 },
+    "shamir_combine_32b_5of10.p95_us": { "max": 9000 },
+    "ring_add_1k.p95_us": { "max": 200 },
+    "quantize_encode_1k.p95_us": { "max": 400 },
+    "message_sign.p95_us": { "max": 1500 },
+    "message_verify.p95_us": { "max": 1800 },
+    "rdp_epsilon_20_steps.p95_us": { "max": 300 },
+    "rdp_curve_all_orders.p95_us": { "max": 60000 },
+    "drift_check_10k_vs_10k.p95_us": { "max": 30000 },
+    "rate_limiter_check.p95_us": { "max": 50 }
+  },
+  "secagg": {
+    "exact_fraction": { "min": 1.0, "max": 1.0 },
+    "max_round_seconds": { "max": 5.0 },
+    "seconds_5_clients": { "max": 1.0 },
+    "seconds_20_clients": { "max": 4.0 },
+    "bytes_per_client_5": { "max": 20000 },
+    "bytes_per_client_20": { "max": 40000 },
+    "wall_seconds": { "max": 60 }
+  },
+  "utility": {
+    "max_secure_vs_plaintext_auc_gap": { "max": 0.005 },
+    "federated_auc_eps_inf_alpha0p1": { "min": 0.80 },
+    "federated_auc_eps_inf_alpha1p0": { "min": 0.82 },
+    "federated_auc_eps_inf_alpha10p0": { "min": 0.84 },
+    "federated_minus_local_eps_inf_alpha0p1": { "min": 0.03 },
+    "federated_minus_local_eps_inf_alpha1p0": { "min": 0.01 },
+    "centralized_minus_federated_eps_inf_alpha1p0": { "max": 0.01 },
+    "federated_auc_eps8_alpha1p0": { "min": 0.70 },
+    "federated_auc_eps4_alpha1p0": { "min": 0.62 },
+    "epsilon_spent_eps8_alpha1p0": { "max": 8.0 },
+    "epsilon_spent_eps4_alpha1p0": { "max": 4.0 },
+    "epsilon_spent_eps1_alpha1p0": { "max": 1.0 },
+    "wall_seconds": { "max": 300 }
+  },
+  "audit": {
+    "broken_variants_flagged": { "min": 3, "max": 3 },
+    "sound_variants_flagged": { "min": 0, "max": 0 },
+    "flagged_correct": { "max": 0 },
+    "flagged_clip_after_noise": { "max": 0 },
+    "flagged_no_clipping": { "min": 1 },
+    "flagged_weak_noise": { "min": 1 },
+    "flagged_average_sensitivity": { "min": 1 },
+    "epsilon_low_correct": { "max": 6.8379 },
+    "epsilon_low_no_clipping": { "min": 6.8379 },
+    "epsilon_low_weak_noise": { "min": 6.8379 },
+    "epsilon_low_average_sensitivity": { "min": 6.8379 },
+    "mu_recovery_ratio": { "min": 0.6, "max": 1.4 },
+    "wall_seconds": { "max": 120 }
+  },
+  "poisoning": {
+    "clean_rejection_rate": { "max": 0.0 },
+    "clean_auc": { "min": 0.85 },
+    "rejection_rate_scale2p0": { "min": 1.0 },
+    "rejection_rate_scale3p0": { "min": 1.0 },
+    "rejection_rate_scale5p0": { "min": 1.0 },
+    "rejection_rate_scale10p0": { "min": 1.0 },
+    "rejection_rate_scale40p0": { "min": 1.0 },
+    "sign_flip1_rejection_rate": { "max": 0.0 },
+    "sign_flip2_rejection_rate": { "max": 0.0 },
+    "sign_flip1_auc_drop": { "max": 0.05 },
+    "sign_flip2_auc_drop": { "max": 0.08 },
+    "wall_seconds": { "max": 120 }
+  }
+}

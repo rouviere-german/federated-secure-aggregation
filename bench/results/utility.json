@@ -1,0 +1,262 @@
+{
+  "bench": "utility",
+  "machine": {
+    "cpu_count": 6,
+    "platform": "Windows-10-10.0.19045-SP0",
+    "processor": "Intel64 Family 6 Model 158 Stepping 10, GenuineIntel",
+    "python": "3.12.14",
+    "timestamp": "2026-09-20T21:47:50+00:00"
+  },
+  "metrics": {
+    "centralized_auc_alpha0p1": 0.8562577546527916,
+    "centralized_auc_alpha10p0": 0.885127665175046,
+    "centralized_auc_alpha1p0": 0.8681445361340335,
+    "centralized_minus_federated_eps_inf_alpha0p1": -0.002142,
+    "centralized_minus_federated_eps_inf_alpha10p0": -0.001072,
+    "centralized_minus_federated_eps_inf_alpha1p0": -0.000855,
+    "epsilon_spent_eps1_alpha0p1": 1.0,
+    "epsilon_spent_eps1_alpha10p0": 1.0,
+    "epsilon_spent_eps1_alpha1p0": 1.0,
+    "epsilon_spent_eps4_alpha0p1": 4.0,
+    "epsilon_spent_eps4_alpha10p0": 4.0,
+    "epsilon_spent_eps4_alpha1p0": 4.0,
+    "epsilon_spent_eps8_alpha0p1": 7.9999,
+    "epsilon_spent_eps8_alpha10p0": 7.9999,
+    "epsilon_spent_eps8_alpha1p0": 7.9999,
+    "federated_auc_eps1_alpha0p1": 0.5251,
+    "federated_auc_eps1_alpha10p0": 0.5061,
+    "federated_auc_eps1_alpha1p0": 0.5646,
+    "federated_auc_eps4_alpha0p1": 0.6399,
+    "federated_auc_eps4_alpha10p0": 0.6833,
+    "federated_auc_eps4_alpha1p0": 0.7199,
+    "federated_auc_eps8_alpha0p1": 0.7173,
+    "federated_auc_eps8_alpha10p0": 0.7891,
+    "federated_auc_eps8_alpha1p0": 0.7837,
+    "federated_auc_eps_inf_alpha0p1": 0.8584,
+    "federated_auc_eps_inf_alpha10p0": 0.8862,
+    "federated_auc_eps_inf_alpha1p0": 0.869,
+    "federated_minus_local_eps_inf_alpha0p1": 0.102183,
+    "federated_minus_local_eps_inf_alpha10p0": 0.012569,
+    "federated_minus_local_eps_inf_alpha1p0": 0.027689,
+    "local_only_auc_alpha0p1": 0.7562166633313322,
+    "local_only_auc_alpha10p0": 0.8736309555146091,
+    "local_only_auc_alpha1p0": 0.8413110777694424,
+    "max_secure_vs_plaintext_auc_gap": 0.0,
+    "secure_vs_plaintext_auc_gap_alpha0p1": 0.0,
+    "secure_vs_plaintext_auc_gap_alpha10p0": 0.0,
+    "secure_vs_plaintext_auc_gap_alpha1p0": 0.0,
+    "wall_seconds": 12.35
+  },
+  "rows": [
+    {
+      "accepted_rounds": 0.0,
+      "alpha": 0.1,
+      "auc": 0.8563,
+      "epsilon": NaN,
+      "epsilon_spent": NaN,
+      "kind": 0.0,
+      "log_loss": 0.3306,
+      "noise_multiplier": 0.0
+    },
+    {
+      "accepted_rounds": 0.0,
+      "alpha": 0.1,
+      "auc": 0.7562,
+      "epsilon": NaN,
+      "epsilon_spent": NaN,
+      "kind": 1.0,
+      "log_loss": 1.044,
+      "noise_multiplier": 0.0
+    },
+    {
+      "accepted_rounds": 20.0,
+      "alpha": 0.1,
+      "auc": 0.8584,
+      "epsilon": Infinity,
+      "epsilon_spent": Infinity,
+      "kind": 2.0,
+      "log_loss": 0.3691,
+      "noise_multiplier": 0.0
+    },
+    {
+      "accepted_rounds": 20.0,
+      "alpha": 0.1,
+      "auc": 0.8584,
+      "epsilon": Infinity,
+      "epsilon_spent": Infinity,
+      "kind": 3.0,
+      "log_loss": 0.3691,
+      "noise_multiplier": 0.0
+    },
+    {
+      "accepted_rounds": 20.0,
+      "alpha": 0.1,
+      "auc": 0.5251,
+      "epsilon": 1.0,
+      "epsilon_spent": 1.0,
+      "kind": 2.0,
+      "log_loss": 7.6117,
+      "noise_multiplier": 18.0916
+    },
+    {
+      "accepted_rounds": 20.0,
+      "alpha": 0.1,
+      "auc": 0.6399,
+      "epsilon": 4.0,
+      "epsilon_spent": 4.0,
+      "kind": 2.0,
+      "log_loss": 1.3796,
+      "noise_multiplier": 5.1777
+    },
+    {
+      "accepted_rounds": 20.0,
+      "alpha": 0.1,
+      "auc": 0.7173,
+      "epsilon": 8.0,
+      "epsilon_spent": 7.9999,
+      "kind": 2.0,
+      "log_loss": 0.6772,
+      "noise_multiplier": 2.8536
+    },
+    {
+      "accepted_rounds": 0.0,
+      "alpha": 1.0,
+      "auc": 0.8681,
+      "epsilon": NaN,
+      "epsilon_spent": NaN,
+      "kind": 0.0,
+      "log_loss": 0.3317,
+      "noise_multiplier": 0.0
+    },
+    {
+      "accepted_rounds": 0.0,
+      "alpha": 1.0,
+      "auc": 0.8413,
+      "epsilon": NaN,
+      "epsilon_spent": NaN,
+      "kind": 1.0,
+      "log_loss": 0.6379,
+      "noise_multiplier": 0.0
+    },
+    {
+      "accepted_rounds": 20.0,
+      "alpha": 1.0,
+      "auc": 0.869,
+      "epsilon": Infinity,
+      "epsilon_spent": Infinity,
+      "kind": 2.0,
+      "log_loss": 0.3305,
+      "noise_multiplier": 0.0
+    },
+    {
+      "accepted_rounds": 20.0,
+      "alpha": 1.0,
+      "auc": 0.869,
+      "epsilon": Infinity,
+      "epsilon_spent": Infinity,
+      "kind": 3.0,
+      "log_loss": 0.3305,
+      "noise_multiplier": 0.0
+    },
+    {
+      "accepted_rounds": 20.0,
+      "alpha": 1.0,
+      "auc": 0.5646,
+      "epsilon": 1.0,
+      "epsilon_spent": 1.0,
+      "kind": 2.0,
+      "log_loss": 5.8861,
+      "noise_multiplier": 18.0916
+    },
+    {
+      "accepted_rounds": 20.0,
+      "alpha": 1.0,
+      "auc": 0.7199,
+      "epsilon": 4.0,
+      "epsilon_spent": 4.0,
+      "kind": 2.0,
+      "log_loss": 0.5978,
+      "noise_multiplier": 5.1777
+    },
+    {
+      "accepted_rounds": 20.0,
+      "alpha": 1.0,
+      "auc": 0.7837,
+      "epsilon": 8.0,
+      "epsilon_spent": 7.9999,
+      "kind": 2.0,
+      "log_loss": 0.4215,
+      "noise_multiplier": 2.8536
+    },
+    {
+      "accepted_rounds": 0.0,
+      "alpha": 10.0,
+      "auc": 0.8851,
+      "epsilon": NaN,
+      "epsilon_spent": NaN,
+      "kind": 0.0,
+      "log_loss": 0.3057,
+      "noise_multiplier": 0.0
+    },
+    {
+      "accepted_rounds": 0.0,
+      "alpha": 10.0,
+      "auc": 0.8736,
+      "epsilon": NaN,
+      "epsilon_spent": NaN,
+      "kind": 1.0,
+      "log_loss": 0.3217,
+      "noise_multiplier": 0.0
+    },
+    {
+      "accepted_rounds": 20.0,
+      "alpha": 10.0,
+      "auc": 0.8862,
+      "epsilon": Infinity,
+      "epsilon_spent": Infinity,
+      "kind": 2.0,
+      "log_loss": 0.3047,
+      "noise_multiplier": 0.0
+    },
+    {
+      "accepted_rounds": 20.0,
+      "alpha": 10.0,
+      "auc": 0.8862,
+      "epsilon": Infinity,
+      "epsilon_spent": Infinity,
+      "kind": 3.0,
+      "log_loss": 0.3047,
+      "noise_multiplier": 0.0
+    },
+    {
+      "accepted_rounds": 20.0,
+      "alpha": 10.0,
+      "auc": 0.5061,
+      "epsilon": 1.0,
+      "epsilon_spent": 1.0,
+      "kind": 2.0,
+      "log_loss": 5.7707,
+      "noise_multiplier": 18.0916
+    },
+    {
+      "accepted_rounds": 20.0,
+      "alpha": 10.0,
+      "auc": 0.6833,
+      "epsilon": 4.0,
+      "epsilon_spent": 4.0,
+      "kind": 2.0,
+      "log_loss": 0.5281,
+      "noise_multiplier": 5.1777
+    },
+    {
+      "accepted_rounds": 20.0,
+      "alpha": 10.0,
+      "auc": 0.7891,
+      "epsilon": 8.0,
+      "epsilon_spent": 7.9999,
+      "kind": 2.0,
+      "log_loss": 0.3886,
+      "noise_multiplier": 2.8536
+    }
+  ]
+}

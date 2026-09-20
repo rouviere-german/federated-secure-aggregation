@@ -1,0 +1,102 @@
+{
+  "bench": "secagg",
+  "machine": {
+    "cpu_count": 6,
+    "platform": "Windows-10-10.0.19045-SP0",
+    "processor": "Intel64 Family 6 Model 158 Stepping 10, GenuineIntel",
+    "python": "3.12.14",
+    "timestamp": "2026-09-20T21:47:36+00:00"
+  },
+  "metrics": {
+    "bytes_per_client_20": 10761.5,
+    "bytes_per_client_5": 5391.0,
+    "dropout_overhead_ratio": 0.8867,
+    "exact_fraction": 1.0,
+    "max_round_seconds": 0.3189,
+    "seconds_20_clients": 0.3189,
+    "seconds_5_clients": 0.0265,
+    "wall_seconds": 0.881
+  },
+  "rows": [
+    {
+      "bytes": 14025.0,
+      "bytes_per_client": 4675.0,
+      "clients": 3.0,
+      "dropouts": 0.0,
+      "exact": 1.0,
+      "seconds": 0.0271,
+      "survivors": 3.0,
+      "threshold": 2.0
+    },
+    {
+      "bytes": 10567.0,
+      "bytes_per_client": 3522.3,
+      "clients": 3.0,
+      "dropouts": 1.0,
+      "exact": 1.0,
+      "seconds": 0.0113,
+      "survivors": 2.0,
+      "threshold": 2.0
+    },
+    {
+      "bytes": 26955.0,
+      "bytes_per_client": 5391.0,
+      "clients": 5.0,
+      "dropouts": 0.0,
+      "exact": 1.0,
+      "seconds": 0.0265,
+      "survivors": 5.0,
+      "threshold": 3.0
+    },
+    {
+      "bytes": 19812.0,
+      "bytes_per_client": 3962.4,
+      "clients": 5.0,
+      "dropouts": 2.0,
+      "exact": 1.0,
+      "seconds": 0.0242,
+      "survivors": 3.0,
+      "threshold": 3.0
+    },
+    {
+      "bytes": 71811.0,
+      "bytes_per_client": 7181.1,
+      "clients": 10.0,
+      "dropouts": 0.0,
+      "exact": 1.0,
+      "seconds": 0.0839,
+      "survivors": 10.0,
+      "threshold": 6.0
+    },
+    {
+      "bytes": 56385.0,
+      "bytes_per_client": 5638.5,
+      "clients": 10.0,
+      "dropouts": 4.0,
+      "exact": 1.0,
+      "seconds": 0.0774,
+      "survivors": 6.0,
+      "threshold": 6.0
+    },
+    {
+      "bytes": 215231.0,
+      "bytes_per_client": 10761.5,
+      "clients": 20.0,
+      "dropouts": 0.0,
+      "exact": 1.0,
+      "seconds": 0.3189,
+      "survivors": 20.0,
+      "threshold": 11.0
+    },
+    {
+      "bytes": 175395.0,
+      "bytes_per_client": 8769.8,
+      "clients": 20.0,
+      "dropouts": 9.0,
+      "exact": 1.0,
+      "seconds": 0.2918,
+      "survivors": 11.0,
+      "threshold": 11.0
+    }
+  ]
+}
