@@ -35,7 +35,11 @@ from federated_secure_aggregation.core.app import create_app
 from federated_secure_aggregation.core.config import Settings
 from federated_secure_aggregation.core.errors import AppError
 from federated_secure_aggregation.core.logging import get_logger
-from federated_secure_aggregation.core.security import AuthenticatedPrincipal
+from federated_secure_aggregation.core.security import (
+    AuthenticatedPrincipal,
+    OperatorPrincipal,
+    SiloPrincipal,
+)
 from federated_secure_aggregation.monitoring.metrics import RoundMetrics, create_round_metrics
 from federated_secure_aggregation.secagg.coordinator import RoundResult, SecAggCoordinator
 from federated_secure_aggregation.secagg.errors import ProtocolStateError, QuorumError, SecAggError
@@ -238,9 +242,7 @@ def create_coordinator_app(
             raise _translate(exc) from None
 
     @app.post("/v1/rounds", response_model=RoundOpened)
-    async def start_round(
-        body: StartRoundRequest, principal: AuthenticatedPrincipal
-    ) -> RoundOpened:
+    async def start_round(body: StartRoundRequest, principal: OperatorPrincipal) -> RoundOpened:
         """Operator route: open a round and publish its nonce."""
         _log.info("round_started", key_id=principal.key_id, round_id=body.round_id)
         return _guard(lambda: service.start_round(body.round_id))
@@ -264,7 +266,7 @@ def create_coordinator_app(
         )
 
     @app.post("/v1/rounds/advance")
-    async def advance(request: Request, principal: AuthenticatedPrincipal) -> dict[str, Any]:
+    async def advance(request: Request, principal: OperatorPrincipal) -> dict[str, Any]:
         """Operator route: close the current stage and return what it published."""
         del request
         _log.info("stage_advance", key_id=principal.key_id, stage=str(service.coordinator.stage))
@@ -272,7 +274,7 @@ def create_coordinator_app(
 
     @app.post("/v1/rounds/key-advertisements", response_model=Accepted)
     async def key_advertisement(
-        message: SignedMessage[KeyAdvertisement], principal: AuthenticatedPrincipal
+        message: SignedMessage[KeyAdvertisement], principal: SiloPrincipal
     ) -> Accepted:
         del principal
         _guard(lambda: service.coordinator.submit_key_advertisement(message))
@@ -285,7 +287,7 @@ def create_coordinator_app(
 
     @app.post("/v1/rounds/share-bundles", response_model=Accepted)
     async def share_bundle(
-        message: SignedMessage[ShareBundle], principal: AuthenticatedPrincipal
+        message: SignedMessage[ShareBundle], principal: SiloPrincipal
     ) -> Accepted:
         del principal
         _guard(lambda: service.coordinator.submit_share_bundle(message))
@@ -297,13 +299,13 @@ def create_coordinator_app(
         return service.announcement(MessageKind.MASKING_SET)
 
     @app.get("/v1/rounds/inbox/{client_id}", response_model=Inbox)
-    async def inbox(client_id: str, principal: AuthenticatedPrincipal) -> Inbox:
+    async def inbox(client_id: str, principal: SiloPrincipal) -> Inbox:
         del principal
         return Inbox(client_id=client_id, ciphertexts=service.inbox_for(client_id))
 
     @app.post("/v1/rounds/masked-inputs", response_model=Accepted)
     async def masked_input(
-        message: SignedMessage[MaskedInput], principal: AuthenticatedPrincipal
+        message: SignedMessage[MaskedInput], principal: SiloPrincipal
     ) -> Accepted:
         del principal
         _guard(lambda: service.coordinator.submit_masked_input(message))
@@ -316,7 +318,7 @@ def create_coordinator_app(
 
     @app.post("/v1/rounds/unmask-shares", response_model=Accepted)
     async def unmask_shares(
-        message: SignedMessage[UnmaskShares], principal: AuthenticatedPrincipal
+        message: SignedMessage[UnmaskShares], principal: SiloPrincipal
     ) -> Accepted:
         del principal
         _guard(lambda: service.coordinator.submit_unmask_shares(message))

@@ -42,11 +42,17 @@ from federated_secure_aggregation.service.runtime import (
 
 pytestmark = pytest.mark.integration
 
-API_KEY = "coordinator-test-key-" + "y" * 24
-AUTH = {"X-API-Key": API_KEY}
+# One key per identity, exactly as the compose stack issues them: the operator cannot post a
+# masked input and a silo cannot open a round, and each identity gets its own rate bucket.
+OPERATOR_KEY = "coordinator-test-operator-" + "y" * 24
+SILO_KEYS = {
+    f"silo_{index:02d}": f"coordinator-test-silo-{index}-" + "z" * 24 for index in range(5)
+}
+AUTH = {"X-API-Key": OPERATOR_KEY}
 # Raw protocol posts send a pre-serialized body, so they must declare the media type the
 # SiloDriver sends; without it FastAPI will not parse the body at all.
 JSON_AUTH = {**AUTH, "Content-Type": "application/json"}
+SILO_AUTH = {"X-API-Key": SILO_KEYS["silo_00"], "Content-Type": "application/json"}
 DIMENSION = 24
 CLIENTS = 5
 THRESHOLD = 3
@@ -102,13 +108,14 @@ class Harness:
         self.service = CoordinatorService(self.coordinator)
         settings = Settings(
             _env_file=None,
-            api_key_sha256=[hash_api_key(API_KEY)],
+            api_key_sha256=[hash_api_key(key) for key in SILO_KEYS.values()],
+            operator_api_key_sha256=[hash_api_key(OPERATOR_KEY)],
             environment="test",
-            # A single round is a burst by design: every silo posts once per stage, and all
-            # silos share one source address in-process. The limiter itself is exercised in
-            # tests/integration/test_app.py; here it must not stand in for the protocol.
-            rate_limit_per_second=100_000.0,
-            rate_limit_burst=100_000,
+            # The values docker-compose.yml sets on the coordinator, not an invented ceiling.
+            # With one key per identity these are comfortable for six pollers; the limiter
+            # itself is exercised in tests/integration/test_app.py.
+            rate_limit_per_second=50.0,
+            rate_limit_burst=200,
         )
         self.app = create_coordinator_app(self.service, settings)
         self.transport = RecordingASGI(self.app)
@@ -123,7 +130,7 @@ class Harness:
             for name in ids
         }
         self.drivers = {
-            name: SiloDriver(client, self.http, api_key=API_KEY)
+            name: SiloDriver(client, self.http, api_key=SILO_KEYS[name])
             for name, client in self.clients.items()
         }
 
@@ -256,6 +263,45 @@ def test_every_route_requires_the_api_key(harness: Harness) -> None:
         assert response.json()["error"]["code"] == "unauthorized"
 
 
+def test_a_silo_key_cannot_open_or_advance_a_round(harness: Harness) -> None:
+    """The operator routes are gated by role, not by a label in a docstring.
+
+    With one shared key, any silo could open rounds with arbitrary ids -- and since a client
+    refuses a round id that does not strictly increase, opening round 2**31 once would lock
+    every silo out of the run for good -- and could drive stage advances to choose who is in
+    the pairing set.
+    """
+    silo_auth = {"X-API-Key": SILO_KEYS["silo_01"]}
+    for method, path, payload in [
+        ("post", "/v1/rounds", {"round_id": 7}),
+        ("post", "/v1/rounds/advance", None),
+    ]:
+        response = harness.http.request(method.upper(), path, json=payload, headers=silo_auth)
+        assert response.status_code == 403, (path, response.status_code)
+        assert response.json()["error"]["code"] == "forbidden"
+    # And nothing happened: no round was opened by the refused call.
+    assert harness.http.get("/v1/rounds/current", headers=AUTH).status_code == 409
+
+
+def test_an_operator_key_cannot_post_protocol_messages(harness: Harness) -> None:
+    """The other direction: the operator holds no key material and has no business masking."""
+    opened = harness.http.post("/v1/rounds", json={"round_id": 0}, headers=AUTH)
+    assert opened.status_code == 200
+    nonce = base64.b64decode(opened.json()["round_nonce"])
+    advertisement = harness.clients["silo_00"].advertise_keys(0, nonce)
+    for path in (
+        "/v1/rounds/key-advertisements",
+        "/v1/rounds/share-bundles",
+        "/v1/rounds/masked-inputs",
+        "/v1/rounds/unmask-shares",
+    ):
+        response = harness.http.post(
+            path, content=advertisement.model_dump_json(), headers=JSON_AUTH
+        )
+        assert response.status_code == 403, (path, response.status_code)
+    assert harness.http.get("/v1/rounds/inbox/silo_00", headers=AUTH).status_code == 403
+
+
 def test_protocol_failures_map_to_status_codes_without_leaking(harness: Harness) -> None:
     early = harness.http.get("/v1/rounds/pairing-set", headers=AUTH)
     assert early.status_code == 409
@@ -265,21 +311,21 @@ def test_protocol_failures_map_to_status_codes_without_leaking(harness: Harness)
     nonce = base64.b64decode(opened.json()["round_nonce"])
     advertisement = harness.clients["silo_00"].advertise_keys(0, nonce)
     first = harness.http.post(
-        "/v1/rounds/key-advertisements", content=advertisement.model_dump_json(), headers=JSON_AUTH
+        "/v1/rounds/key-advertisements", content=advertisement.model_dump_json(), headers=SILO_AUTH
     )
     assert first.status_code == 200
     duplicate = harness.http.post(
-        "/v1/rounds/key-advertisements", content=advertisement.model_dump_json(), headers=JSON_AUTH
+        "/v1/rounds/key-advertisements", content=advertisement.model_dump_json(), headers=SILO_AUTH
     )
     assert duplicate.status_code == 409
     assert duplicate.json()["error"]["code"] == "wrong_stage"
 
     wrong_stage = harness.http.post(
-        "/v1/rounds/masked-inputs", content=advertisement.model_dump_json(), headers=JSON_AUTH
+        "/v1/rounds/masked-inputs", content=advertisement.model_dump_json(), headers=SILO_AUTH
     )
     assert wrong_stage.status_code in {409, 422}
 
-    missing_inbox = harness.http.get("/v1/rounds/inbox/silo_00", headers=AUTH)
+    missing_inbox = harness.http.get("/v1/rounds/inbox/silo_00", headers=SILO_AUTH)
     assert missing_inbox.status_code == 404
 
 
@@ -353,7 +399,8 @@ def test_build_service_from_env_reads_mounted_key_material(tmp_path: Path) -> No
 
     settings = Settings(
         _env_file=None,
-        api_key_sha256=[hash_api_key(API_KEY)],
+        api_key_sha256=[hash_api_key(key) for key in SILO_KEYS.values()],
+        operator_api_key_sha256=[hash_api_key(OPERATOR_KEY)],
         environment="test",
         coordinator_identity_path=identity_path,
         roster_path=roster_path,

@@ -124,10 +124,19 @@ rather than accepting unauthenticated silos:
 
 ```bash
 uv run python scripts/generate_identities.py --silos 5   # writes secrets/, git-ignored
-uv run federated-secure-aggregation generate-api-key     # prints a key and its SHA-256 digest
-APP_API_KEY_SHA256=<digest> uv run federated-secure-aggregation serve
+set -a && . ./secrets/compose.env && set +a              # one transport key per identity
+APP_API_KEY_SHA256=$APP_SILO_API_KEY_SHA256 \
+  APP_OPERATOR_API_KEY_SHA256=$APP_OPERATOR_API_KEY_SHA256 \
+  uv run federated-secure-aggregation serve
 curl -s http://127.0.0.1:8000/healthz
 ```
+
+Transport keys are per identity, and the digest lists are split by role: `APP_API_KEY_SHA256`
+holds the silo keys, `APP_OPERATOR_API_KEY_SHA256` the operator's. A single shared key would make
+"operator route" a comment rather than a control — any silo could open rounds and drive stage
+advances — and would put every process in one token bucket, because the rate limiter keys on the
+presented key. Six normal pollers then look like a flood and the coordinator throttles its own
+federation.
 
 Containers: `docker compose up --build` runs a coordinator, an operator and five silo containers on
 an internal network. Each silo mounts exactly one private key — its own — plus the public roster,

@@ -58,6 +58,24 @@ def test_env_example_documents_every_setting(repo_root: Path) -> None:
     assert documented == expected
 
 
+def test_a_key_digest_cannot_hold_two_roles() -> None:
+    """One key per identity is the point; a digest in both lists would silently be an operator."""
+    digest = "a" * 64
+    with pytest.raises(ValidationError, match="cannot be both"):
+        Settings(_env_file=None, api_key_sha256=[digest], operator_api_key_sha256=[digest])
+
+
+def test_api_key_roles_maps_each_digest_to_its_role() -> None:
+    settings = Settings(
+        _env_file=None, api_key_sha256=["a" * 64, "b" * 64], operator_api_key_sha256=["c" * 64]
+    )
+    assert settings.api_key_roles() == {
+        "a" * 64: "silo",
+        "b" * 64: "silo",
+        "c" * 64: "operator",
+    }
+
+
 def test_get_settings_is_cached() -> None:
     get_settings.cache_clear()
     try:

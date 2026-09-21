@@ -55,7 +55,7 @@ def create_app(
     checks: dict[str, ReadinessCheck] = dict(readiness_checks or {})
     provider = tracer_provider or build_tracer_provider(cfg.service_name, cfg.tracing_exporter)
     metrics = create_http_metrics(registry)
-    verifier = ApiKeyVerifier(cfg.api_key_sha256)
+    verifier = ApiKeyVerifier(cfg.api_key_roles())
     limiter = RateLimiter(
         cfg.rate_limit_per_second, cfg.rate_limit_burst, max_keys=cfg.rate_limit_max_clients
     )

@@ -11,8 +11,10 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Annotated, Literal
 
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
+
+from federated_secure_aggregation.core.security import ROLE_OPERATOR, ROLE_SILO
 
 __all__ = ["Settings", "get_settings"]
 
@@ -49,7 +51,11 @@ class Settings(BaseSettings):
     enable_docs: bool = False
 
     # --- HTTP security ---
+    # Silo (participant) keys: one per silo, so every identity gets its own rate-limit bucket.
     api_key_sha256: Annotated[list[str], NoDecode] = Field(default_factory=list)
+    # Operator keys. Listed separately because the two operator routes are the ones a
+    # compromised silo must not reach: with a single shared key, "operator route" is a comment.
+    operator_api_key_sha256: Annotated[list[str], NoDecode] = Field(default_factory=list)
     cors_allow_origins: Annotated[list[str], NoDecode] = Field(default_factory=list)
     rate_limit_per_second: float = Field(default=5.0, gt=0)
     rate_limit_burst: int = Field(default=20, ge=1)
@@ -79,18 +85,34 @@ class Settings(BaseSettings):
     # --- storage ---
     data_dir: Path = Path("var")
 
-    @field_validator("api_key_sha256", mode="before")
+    @field_validator("api_key_sha256", "operator_api_key_sha256", mode="before")
     @classmethod
     def _parse_key_hashes(cls, value: object) -> object:
         return _split_csv(value)
 
-    @field_validator("api_key_sha256")
+    @field_validator("api_key_sha256", "operator_api_key_sha256")
     @classmethod
     def _check_key_hashes(cls, value: list[str]) -> list[str]:
         for digest in value:
             if not _SHA256_HEX.fullmatch(digest):
-                raise ValueError("api_key_sha256 entries must be lowercase hex SHA-256 digests")
+                raise ValueError("api key entries must be lowercase hex SHA-256 digests")
         return value
+
+    @model_validator(mode="after")
+    def _roles_are_unambiguous(self) -> Settings:
+        shared = set(self.api_key_sha256) & set(self.operator_api_key_sha256)
+        if shared:
+            raise ValueError(
+                "a key digest cannot be both a silo key and an operator key; issue one key "
+                "per identity"
+            )
+        return self
+
+    def api_key_roles(self) -> dict[str, str]:
+        """Hex digest -> role, as the app factory configures the verifier."""
+        roles = dict.fromkeys(self.api_key_sha256, ROLE_SILO)
+        roles.update(dict.fromkeys(self.operator_api_key_sha256, ROLE_OPERATOR))
+        return roles
 
     @field_validator("cors_allow_origins", mode="before")
     @classmethod

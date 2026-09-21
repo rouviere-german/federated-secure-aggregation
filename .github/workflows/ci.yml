@@ -278,13 +278,13 @@ jobs:
           enable-cache: true
       - run: uv sync --frozen
       - name: generate key material (never committed)
+        # Writes secrets/, including compose.env: one transport API key per identity plus the
+        # two digest lists. A single shared key would put all six processes in one rate-limit
+        # bucket (the bucket is keyed on the presented key) and would make the operator routes
+        # reachable by every silo.
         run: uv run python scripts/generate_identities.py --silos 5
-      - name: generate a transport API key
-        run: |
-          uv run federated-secure-aggregation generate-api-key > key.json
-          echo "APP_API_KEY=$(jq -r .api_key key.json)" >> "$GITHUB_ENV"
-          echo "APP_API_KEY_SHA256=$(jq -r .api_key_sha256 key.json)" >> "$GITHUB_ENV"
-          rm key.json
+      - name: export the per-identity transport keys
+        run: cat secrets/compose.env | grep -v '^#' | grep . >> "$GITHUB_ENV"
       - name: bring the federation up
         run: docker compose up --build --detach
       - name: kill two silos mid-run
@@ -301,6 +301,16 @@ jobs:
           listing=$(docker compose exec -T silo-02 ls /run/secrets | sort | xargs)
           echo "silo-02 sees: $listing"
           test "$listing" = "identity.json roster.json"
+      - name: a silo key may not open a round
+        # The operator routes are a role, not a docstring label. Asserted against the running
+        # coordinator so the compose wiring is checked, not just the unit-level dependency.
+        run: |
+          status=$(curl -s -o /dev/null -w '%{http_code}' \
+            -X POST http://127.0.0.1:8000/v1/rounds \
+            -H "X-API-Key: ${APP_SILO_00_API_KEY}" \
+            -H 'Content-Type: application/json' -d '{"round_id": 9999}')
+          echo "silo key on POST /v1/rounds -> $status"
+          test "$status" = "403"
       - name: tear down
         if: always()
         run: docker compose down --volumes --remove-orphans

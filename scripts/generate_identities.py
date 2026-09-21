@@ -6,6 +6,11 @@ Writes, into ``--out`` (default ``secrets/``):
     coordinator_identity.json   the coordinator's Ed25519 private key
     roster.json                 silo id -> base64 Ed25519 *public* key
     silo_<id>_identity.json     one private key per silo
+    compose.env                 one transport API key per identity, plus the digest lists
+
+The transport keys are per identity on purpose. One shared key would make the operator routes
+(open a round, advance a stage) reachable by every silo, and would put all six processes in a
+single rate-limit bucket, because the bucket is keyed on the presented key.
 
 Nothing here is ever committed: ``.gitignore`` excludes ``secrets/``, and CI runs gitleaks. In
 compose each file is bind-mounted read-only into exactly the container that needs it, so a silo
@@ -28,6 +33,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
+from federated_secure_aggregation.core.security import generate_api_key
 from federated_secure_aggregation.crypto.keys import IdentityKeyPair
 from federated_secure_aggregation.fl.experiment import silo_ids
 
@@ -75,7 +81,30 @@ def generate(out: Path, silos: int) -> list[Path]:
     roster_path = out / "roster.json"
     roster_path.write_text(json.dumps(roster, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     written.append(roster_path)
+
+    written.append(write_compose_env(out, sorted(roster)))
     return written
+
+
+def write_compose_env(out: Path, ids: list[str]) -> Path:
+    """One transport API key per identity, in the form ``docker-compose.yml`` expects."""
+    operator_raw, operator_digest = generate_api_key()
+    silo_keys = {silo_id: generate_api_key() for silo_id in ids}
+    lines = [
+        "# Transport API keys, one per identity. Source this before `docker compose up`:",
+        "#   set -a && . ./secrets/compose.env && set +a",
+        "# Private material: never commit it.",
+        f"APP_OPERATOR_API_KEY={operator_raw}",
+        f"APP_OPERATOR_API_KEY_SHA256={operator_digest}",
+    ]
+    lines += [
+        f"APP_{silo_id.upper()}_API_KEY={raw}" for silo_id, (raw, _) in sorted(silo_keys.items())
+    ]
+    lines.append("APP_SILO_API_KEY_SHA256=" + ",".join(silo_keys[key][1] for key in ids))
+    path = out / "compose.env"
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    path.chmod(0o600)
+    return path
 
 
 def main(argv: list[str] | None = None) -> int:

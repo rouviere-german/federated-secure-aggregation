@@ -44,7 +44,13 @@ from federated_secure_aggregation.secagg.client import SecAggClient
 from federated_secure_aggregation.secagg.errors import SecAggError
 from federated_secure_aggregation.secagg.messages import ProtocolMessageError, RoundStage
 from federated_secure_aggregation.secagg.quantize import clip_l2
-from federated_secure_aggregation.service.client_http import HttpProtocolError, SiloDriver
+from federated_secure_aggregation.service.client_http import (
+    RETRYABLE_STATUSES,
+    HttpProtocolError,
+    RetryPolicy,
+    SiloDriver,
+    request_with_retry,
+)
 
 __all__ = ["SiloConfig", "run_operator", "run_silo"]
 
@@ -87,6 +93,7 @@ def run_silo(
     *,
     api_key: str,
     sleep: Callable[[float], None] = time.sleep,
+    retry: RetryPolicy | None = None,
 ) -> dict[str, Any]:
     """Join rounds until ``config.rounds`` distinct ones have been seen.
 
@@ -99,7 +106,7 @@ def run_silo(
     features, labels = experiment.silo_data()[config.silo_id]
     model = experiment.logistic_model()
     global_params = model.initial_params()
-    driver = SiloDriver(client, http, api_key=api_key)
+    driver = SiloDriver(client, http, api_key=api_key, retry=retry, sleep=sleep)
     training = LocalTrainingConfig(
         epochs=config.epochs,
         batch_size=config.batch_size,
@@ -187,15 +194,17 @@ def _play_round(
     update, _ = clip_l2(trained - global_params, scheme.clip_norm)
 
     driver.advertise_keys(round_id, nonce)
-    if not driver.wait_for_stage(RoundStage.SHARE_KEYS, poll_seconds=config.poll_seconds):
-        raise HttpProtocolError("share-keys", 409, "stage_missed")
+    _wait(driver, RoundStage.SHARE_KEYS, config, "share-keys")
     driver.send_shares()
-    if not driver.wait_for_stage(RoundStage.MASKED_INPUT, poll_seconds=config.poll_seconds):
-        raise HttpProtocolError("masked-input", 409, "stage_missed")
+    _wait(driver, RoundStage.MASKED_INPUT, config, "masked-input")
     driver.collect_shares_and_mask(update, scheme)
-    if not driver.wait_for_stage(RoundStage.UNMASK, poll_seconds=config.poll_seconds):
-        raise HttpProtocolError("unmask", 409, "stage_missed")
+    _wait(driver, RoundStage.UNMASK, config, "unmask")
     driver.reveal_shares()
+
+
+def _wait(driver: SiloDriver, stage: RoundStage, config: SiloConfig, action: str) -> None:
+    if not driver.wait_for_stage(stage, poll_seconds=config.poll_seconds):
+        raise HttpProtocolError(action, 409, "stage_missed")
 
 
 def run_operator(
@@ -207,6 +216,7 @@ def run_operator(
     poll_seconds: float = 0.25,
     join_polls: int = 1_000,
     sleep: Callable[[float], None] = time.sleep,
+    retry: RetryPolicy | None = None,
 ) -> list[dict[str, Any]]:
     """Open ``rounds`` rounds and ask the coordinator to close each stage. One outcome per round.
 
@@ -224,13 +234,29 @@ def run_operator(
         raise ValueError("rounds must be >= 1")
     del expected_clients
     headers = {"X-API-Key": api_key, "Content-Type": "application/json"}
+    policy = retry if retry is not None else RetryPolicy()
     outcomes: list[dict[str, Any]] = []
 
     for round_id in range(rounds):
-        opened = http.post("/v1/rounds", json={"round_id": round_id}, headers=headers)
+        opened = request_with_retry(
+            http,
+            "POST",
+            "/v1/rounds",
+            headers=headers,
+            json={"round_id": round_id},
+            retry=policy,
+            sleep=sleep,
+        )
         if opened.status_code >= 400:
             raise HttpProtocolError("start-round", opened.status_code)
-        outcome = _drive_round(http, headers, poll_seconds, join_polls, sleep)
+        outcome = _drive_round(
+            http,
+            headers,
+            poll_seconds=poll_seconds,
+            join_polls=join_polls,
+            sleep=sleep,
+            retry=policy,
+        )
         outcomes.append(outcome or {"round_id": round_id, "stage": "FAILED", "accepted": False})
         _log.info("operator_round_done", round_id=round_id)
     return outcomes
@@ -239,13 +265,22 @@ def run_operator(
 def _drive_round(
     http: httpx.Client,
     headers: dict[str, str],
+    *,
     poll_seconds: float,
     join_polls: int,
     sleep: Callable[[float], None],
+    retry: RetryPolicy,
 ) -> dict[str, Any] | None:
     """Advance a round through its four stages, waiting whenever the coordinator says "not yet"."""
     for _ in range(4):
-        payload = _advance_when_allowed(http, headers, poll_seconds, join_polls, sleep)
+        payload = _advance_when_allowed(
+            http,
+            headers,
+            poll_seconds=poll_seconds,
+            join_polls=join_polls,
+            sleep=sleep,
+            retry=retry,
+        )
         if payload is None:
             return None
         if "accepted" in payload:
@@ -253,20 +288,30 @@ def _drive_round(
     return None
 
 
+# Answers that mean "ask again", not "the round is lost": 409 is the coordinator refusing to
+# close a stage before every silo has answered, and the rest are transient transport answers
+# that survived the retry policy (a sustained rate limit, a restarting coordinator).
+_NOT_YET_STATUSES = frozenset({409}) | RETRYABLE_STATUSES
+
+
 def _advance_when_allowed(
     http: httpx.Client,
     headers: dict[str, str],
+    *,
     poll_seconds: float,
     join_polls: int,
     sleep: Callable[[float], None],
+    retry: RetryPolicy,
 ) -> dict[str, Any] | None:
     """Retry ``advance`` until the coordinator permits the stage to close, or give up."""
     for _ in range(join_polls):
-        response = http.post("/v1/rounds/advance", headers=headers)
+        response = request_with_retry(
+            http, "POST", "/v1/rounds/advance", headers=headers, retry=retry, sleep=sleep
+        )
         if response.status_code < 400:
             body = response.json()
             return dict(body) if isinstance(body, dict) else {}
-        if response.status_code != 409:
+        if response.status_code not in _NOT_YET_STATUSES:
             return None
         sleep(poll_seconds)
     return None

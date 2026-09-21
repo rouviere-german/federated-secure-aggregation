@@ -5,12 +5,17 @@
 # rows (generated inside the container from its seed) cannot reach another container even by
 # accident, and a compromised silo cannot read another silo's private key.
 #
-# Before the first run, generate key material outside the image:
+# Before the first run, generate key material outside the image. One API key per identity:
+# a shared key would let any silo open rounds and drive stage advances, and would put all six
+# processes in one rate-limit bucket (the bucket is keyed on the presented key), so six normal
+# pollers would look like a flood and the coordinator would 429 its own federation.
 #
-#   uv run python scripts/generate_identities.py --silos 5
-#   uv run federated-secure-aggregation generate-api-key      # note both values
-#   export APP_API_KEY=<key> APP_API_KEY_SHA256=<digest>
+#   uv run python scripts/generate_identities.py --silos 5   # writes secrets/, including .env
+#   set -a && . ./secrets/compose.env && set +a              # exports the six keys + digests
 #   docker compose up --build
+#
+# `generate_identities.py` writes secrets/compose.env with APP_OPERATOR_API_KEY, APP_SILO_NN_API_KEY
+# and the two digest lists the coordinator needs.
 #
 # Only locally built images; nothing is pulled at runtime besides the pinned bases.
 
@@ -31,9 +36,6 @@ x-silo: &silo
   depends_on:
     coordinator:
       condition: service_healthy
-  environment:
-    APP_API_KEY: ${APP_API_KEY:?generate one with `generate-api-key`}
-    APP_LOG_LEVEL: INFO
   networks: [federation]
   restart: "no"
   <<: *hardening
@@ -48,8 +50,15 @@ services:
     environment:
       APP_ENVIRONMENT: prod
       APP_LOG_LEVEL: INFO
-      # Comma-separated SHA-256 digests; generate with `generate-api-key`.
-      APP_API_KEY_SHA256: ${APP_API_KEY_SHA256:?generate one with `generate-api-key`}
+      # Comma-separated SHA-256 digests, split by role. The silo list holds five digests,
+      # one per silo; the operator list holds one. A digest may not appear in both.
+      APP_API_KEY_SHA256: ${APP_SILO_API_KEY_SHA256:?run scripts/generate_identities.py}
+      APP_OPERATOR_API_KEY_SHA256: ${APP_OPERATOR_API_KEY_SHA256:?run scripts/generate_identities.py}
+      # The limit is per authenticated key. Six identities each poll the round status about
+      # four times a second (poll_seconds = 0.25), so 50/s with a burst of 200 leaves roughly
+      # 2x headroom per identity. Leaving the 5/s default here 429s the federation to death.
+      APP_RATE_LIMIT_PER_SECOND: "50"
+      APP_RATE_LIMIT_BURST: "200"
       APP_MODEL_DIMENSION: "13"
       APP_SECAGG_THRESHOLD: "3"
       APP_CLIP_NORM: "1.0"
@@ -74,7 +83,7 @@ services:
       coordinator:
         condition: service_healthy
     environment:
-      APP_API_KEY: ${APP_API_KEY:?generate one with `generate-api-key`}
+      APP_API_KEY: ${APP_OPERATOR_API_KEY:?run scripts/generate_identities.py}
       APP_LOG_LEVEL: INFO
     command: ["operate", "--coordinator", "http://coordinator:8000", "--rounds", "20"]
     networks: [federation]
@@ -83,6 +92,9 @@ services:
 
   silo-00:
     <<: *silo
+    environment:
+      APP_API_KEY: ${APP_SILO_00_API_KEY:?run scripts/generate_identities.py}
+      APP_LOG_LEVEL: INFO
     command: ["silo", "silo_00", "--identity", "/run/secrets/identity.json", "--roster", "/run/secrets/roster.json", "--rounds", "20"]
     volumes:
       - ./secrets/silo_00_identity.json:/run/secrets/identity.json:ro
@@ -90,6 +102,9 @@ services:
 
   silo-01:
     <<: *silo
+    environment:
+      APP_API_KEY: ${APP_SILO_01_API_KEY:?run scripts/generate_identities.py}
+      APP_LOG_LEVEL: INFO
     command: ["silo", "silo_01", "--identity", "/run/secrets/identity.json", "--roster", "/run/secrets/roster.json", "--rounds", "20"]
     volumes:
       - ./secrets/silo_01_identity.json:/run/secrets/identity.json:ro
@@ -97,6 +112,9 @@ services:
 
   silo-02:
     <<: *silo
+    environment:
+      APP_API_KEY: ${APP_SILO_02_API_KEY:?run scripts/generate_identities.py}
+      APP_LOG_LEVEL: INFO
     command: ["silo", "silo_02", "--identity", "/run/secrets/identity.json", "--roster", "/run/secrets/roster.json", "--rounds", "20"]
     volumes:
       - ./secrets/silo_02_identity.json:/run/secrets/identity.json:ro
@@ -104,6 +122,9 @@ services:
 
   silo-03:
     <<: *silo
+    environment:
+      APP_API_KEY: ${APP_SILO_03_API_KEY:?run scripts/generate_identities.py}
+      APP_LOG_LEVEL: INFO
     command: ["silo", "silo_03", "--identity", "/run/secrets/identity.json", "--roster", "/run/secrets/roster.json", "--rounds", "20"]
     volumes:
       - ./secrets/silo_03_identity.json:/run/secrets/identity.json:ro
@@ -111,6 +132,9 @@ services:
 
   silo-04:
     <<: *silo
+    environment:
+      APP_API_KEY: ${APP_SILO_04_API_KEY:?run scripts/generate_identities.py}
+      APP_LOG_LEVEL: INFO
     command: ["silo", "silo_04", "--identity", "/run/secrets/identity.json", "--roster", "/run/secrets/roster.json", "--rounds", "20"]
     volumes:
       - ./secrets/silo_04_identity.json:/run/secrets/identity.json:ro

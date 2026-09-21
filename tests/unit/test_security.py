@@ -5,6 +5,9 @@ import hmac
 import pytest
 
 from federated_secure_aggregation.core.security import (
+    DEFAULT_ROLE,
+    ROLE_OPERATOR,
+    ROLE_SILO,
     ApiKeyVerifier,
     extract_api_key,
     generate_api_key,
@@ -21,10 +24,27 @@ def test_generated_keys_verify_against_their_digest() -> None:
     principal = verifier.verify(raw)
     assert principal is not None
     assert principal.key_id == digest[:12]
+    assert principal.role == DEFAULT_ROLE
     assert verifier.verify("wrong-key") is None
     assert verifier.verify(None) is None
     assert verifier.verify("") is None
     assert verifier.verify("x" * 600) is None
+
+
+def test_a_verifier_reports_the_role_its_key_was_configured_with() -> None:
+    """Roles are what stop a silo key from opening rounds; the verifier carries them."""
+    operator, silo = "operator-key-value", "silo-key-value"
+    verifier = ApiKeyVerifier(
+        {hash_api_key(operator): ROLE_OPERATOR, hash_api_key(silo): ROLE_SILO}
+    )
+    operator_principal = verifier.verify(operator)
+    silo_principal = verifier.verify(silo)
+    assert operator_principal is not None
+    assert silo_principal is not None
+    assert operator_principal.role == ROLE_OPERATOR
+    assert silo_principal.role == ROLE_SILO
+    # Distinct keys mean distinct key ids, which is what gives each identity its own rate bucket.
+    assert operator_principal.key_id != silo_principal.key_id
 
 
 def test_no_configured_keys_fails_closed() -> None:
