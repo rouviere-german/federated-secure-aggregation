@@ -220,6 +220,11 @@ jobs:
       - uses: hadolint/hadolint-action@v3.1.0
         with:
           dockerfile: Dockerfile
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          enable-cache: true
+      - run: uv sync --frozen
       - uses: docker/setup-buildx-action@v3
       - name: docker build
         uses: docker/build-push-action@v6
@@ -228,10 +233,24 @@ jobs:
           load: true
           push: false
           tags: ${{ env.IMAGE }}
+      - name: generate key material (never committed)
+        # `serve` fails closed: with no roster and no identity key the coordinator refuses
+        # to start rather than quietly accept unauthenticated participants. So the smoke
+        # test has to mount real key material, exactly as compose does.
+        run: uv run python scripts/generate_identities.py --silos 5
       - name: container smoke test (HEALTHCHECK reports healthy)
+        # APP_DATA_DIR must point at the one writable path. It defaults to ./var, and with
+        # a read-only root filesystem the budget ledger cannot be created there.
         run: |
           docker run --detach --name app --read-only --tmpfs /tmp --cap-drop ALL \
-            --security-opt no-new-privileges --health-interval 3s "$IMAGE"
+            --security-opt no-new-privileges --health-interval 3s \
+            --volume "$PWD/secrets/coordinator_identity.json:/run/secrets/coordinator_identity.json:ro" \
+            --volume "$PWD/secrets/roster.json:/run/secrets/roster.json:ro" \
+            --volume app-state:/var/lib/fedsecagg \
+            --env APP_COORDINATOR_IDENTITY_PATH=/run/secrets/coordinator_identity.json \
+            --env APP_ROSTER_PATH=/run/secrets/roster.json \
+            --env APP_DATA_DIR=/var/lib/fedsecagg \
+            "$IMAGE"
           for _ in $(seq 1 30); do
             status="$(docker inspect --format '{{.State.Health.Status}}' app)"
             if [ "$status" = "healthy" ]; then
