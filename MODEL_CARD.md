@@ -91,6 +91,13 @@ describes that simulation and nothing else.
 - **Accounting:** in-repo RDP accountant for the subsampled Gaussian, cross-checked against
   Google's `dp-accounting` (`tests/unit/test_accountant_reference.py`). A persisted ledger refuses
   the round that would exceed the target and survives restarts.
+- **What the reported epsilon does not cover.** The aggregate norm bound is tested against the
+  *noiseless* sum, and the accept/reject outcome is published (demo table, audit chain,
+  `rounds_rejected_total`). That is one data-dependent bit per round released outside the
+  accountant, so the real loss is the reported epsilon **plus** that bit per round. A rejected
+  round charges the ledger nothing -- honest bookkeeping, not a privacy control. Applying the
+  bound to the noised aggregate would make the decision post-processing and close the gap; see
+  README Non-goals for why that trade is recorded rather than taken.
 - **Audited epsilon:** from `uv run python bench/bench_audit.py --check`, 48 canary clients against
   1 024 reference directions, 30 rounds, claimed epsilon 6.8379:
 
@@ -119,10 +126,16 @@ describes that simulation and nothing else.
 - **Drift monitors:** PSI and KS (`src/federated_secure_aggregation/ml/drift.py`), PSI threshold
   0.2, KS alpha 0.01 with a minimum statistic of 0.05, applied to the per-round aggregate norm and
   the holdout score distribution.
-- **Performance monitors:** `fedsecagg_global_holdout_auc`, `fedsecagg_aggregate_norm`,
-  `fedsecagg_rounds_rejected_total`, `fedsecagg_epsilon_spent`, `fedsecagg_dropouts_total`,
-  `fedsecagg_round_duration_seconds`, exposed on the authenticated `/metrics` endpoint. No metric
-  carries a per-client label, so the endpoint cannot be used to profile individual silos.
+- **Performance monitors:** `fedsecagg_aggregate_norm`, `fedsecagg_rounds_rejected_total`,
+  `fedsecagg_epsilon_spent`, `fedsecagg_dropouts_total`, `fedsecagg_round_duration_seconds`,
+  exposed on the authenticated `/metrics` endpoint. No metric carries a per-client label, so the
+  endpoint cannot be used to profile individual silos.
+- **`fedsecagg_global_holdout_auc` is set by the in-process runner only.** The HTTP coordinator
+  holds no holdout split and no labels -- the data stays with the silos -- so it cannot evaluate
+  the model, and the served gauge stays unset. AUC comes from `uv run python tasks.py demo` and
+  the utility bench. Epsilon is served: the coordinator adds the calibrated noise, charges the
+  budget ledger and refuses to open a round the budget cannot pay for
+  (`tests/integration/test_service_privacy.py`).
 - **Retraining trigger:** the budget ledger is the hard stop -- once the target epsilon is spent,
   no further round runs. Restarting training means a new budget, and that is a policy decision, not
   an automatic one.

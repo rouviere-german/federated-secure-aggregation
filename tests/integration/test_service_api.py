@@ -31,7 +31,11 @@ from federated_secure_aggregation.secagg.client import SecAggClient
 from federated_secure_aggregation.secagg.coordinator import RoundConfig, SecAggCoordinator
 from federated_secure_aggregation.secagg.masking import plaintext_sum
 from federated_secure_aggregation.secagg.session import SimulationClock
-from federated_secure_aggregation.service.api import CoordinatorService, create_coordinator_app
+from federated_secure_aggregation.service.api import (
+    CentralPrivacy,
+    CoordinatorService,
+    create_coordinator_app,
+)
 from federated_secure_aggregation.service.client_http import HttpProtocolError, SiloDriver
 from federated_secure_aggregation.service.runtime import (
     RosterError,
@@ -87,7 +91,7 @@ class RecordingASGI:
 
 
 class Harness:
-    def __init__(self) -> None:
+    def __init__(self, privacy: CentralPrivacy | None = None) -> None:
         ids = [f"silo_{index:02d}" for index in range(CLIENTS)]
         self.identities = {name: IdentityKeyPair.generate() for name in ids}
         public = {name: identity.public_bytes for name, identity in self.identities.items()}
@@ -105,7 +109,7 @@ class Harness:
             ),
             clock=self.clock,
         )
-        self.service = CoordinatorService(self.coordinator)
+        self.service = CoordinatorService(self.coordinator, privacy=privacy)
         settings = Settings(
             _env_file=None,
             api_key_sha256=[hash_api_key(key) for key in SILO_KEYS.values()],

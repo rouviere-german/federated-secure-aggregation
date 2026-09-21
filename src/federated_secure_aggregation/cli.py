@@ -100,6 +100,12 @@ def _operate(args: argparse.Namespace) -> int:  # pragma: no cover - needs a soc
     print(json.dumps(outcomes, indent=2, sort_keys=True))
     accepted = sum(1 for outcome in outcomes if outcome.get("accepted"))
     print(f"{accepted}/{len(outcomes)} rounds accepted", file=sys.stderr)
+    # The per-round epsilon is in the JSON above; this is the run's cumulative spend. The
+    # coordinator holds no holdout split, so AUC is not a number this process can print --
+    # `tasks.py demo` is the runner that evaluates the model. README says which is which.
+    spent = [outcome["epsilon_spent"] for outcome in outcomes if outcome.get("epsilon_spent")]
+    if spent:
+        print(f"epsilon spent: {max(spent):.4f}", file=sys.stderr)
     return 0
 
 

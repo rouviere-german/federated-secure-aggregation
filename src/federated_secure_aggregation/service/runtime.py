@@ -19,9 +19,14 @@ from fastapi import FastAPI
 from federated_secure_aggregation.core.config import Settings, get_settings
 from federated_secure_aggregation.crypto.keys import KEY_BYTES, IdentityKeyPair
 from federated_secure_aggregation.monitoring.metrics import create_round_metrics
+from federated_secure_aggregation.privacy.ledger import BudgetLedger
 from federated_secure_aggregation.secagg.coordinator import RoundConfig, SecAggCoordinator
 from federated_secure_aggregation.secagg.messages import CLIENT_ID_PATTERN
-from federated_secure_aggregation.service.api import CoordinatorService, create_coordinator_app
+from federated_secure_aggregation.service.api import (
+    CentralPrivacy,
+    CoordinatorService,
+    create_coordinator_app,
+)
 
 __all__ = ["RosterError", "build_service_from_env", "load_identity", "load_roster"]
 
@@ -95,5 +100,18 @@ def build_service_from_env(settings: Settings | None = None) -> FastAPI:
             stage_timeout_seconds=cfg.stage_timeout_seconds,
         ),
     )
-    service = CoordinatorService(coordinator, create_round_metrics())
+    # The ledger is persisted next to the rest of the run's state, so restarting the container
+    # does not reset the privacy budget to zero -- which would make the claimed epsilon a
+    # statement about uptime rather than about the data.
+    cfg.data_dir.mkdir(parents=True, exist_ok=True)
+    privacy = CentralPrivacy(
+        ledger=BudgetLedger(
+            noise_multiplier=cfg.noise_multiplier,
+            target_epsilon=cfg.target_epsilon,
+            delta=cfg.target_delta,
+            path=cfg.data_dir / "budget.json",
+        ),
+        clip_norm=cfg.clip_norm,
+    )
+    service = CoordinatorService(coordinator, create_round_metrics(), privacy)
     return create_coordinator_app(service, cfg)

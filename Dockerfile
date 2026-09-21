@@ -34,6 +34,11 @@ ENV PATH="/opt/venv/bin:${PATH}" \
     PYTHONUNBUFFERED=1 \
     APP_HOST=0.0.0.0 \
     APP_PORT=8000
+# The coordinator's only writable path: the privacy budget ledger lives here. It is created in
+# the image and owned by the app user so that a named volume mounted over it inherits that
+# ownership; the rest of the filesystem stays read-only. A budget that reset on restart would
+# make the claimed epsilon a statement about uptime rather than about the data.
+RUN install -d -o 10001 -g 10001 -m 0750 /var/lib/fedsecagg
 WORKDIR /app
 USER 10001:10001
 EXPOSE 8000

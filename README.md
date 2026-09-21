@@ -322,6 +322,14 @@ integrity. A malicious coordinator is a non-goal.
 - **Local DP.** Noise is added centrally by the coordinator, so the guarantee is trusted-curator
   central DP over the masked sum. Silos are protected from each other and from anyone reading the
   transcript, not from a coordinator that discards the protocol.
+- **An epsilon that covers the accept/reject decision.** The norm bound is applied to the
+  *noiseless* aggregate, and the outcome is published: in the demo table, in the hash-chained
+  audit record and in `rounds_rejected_total`. That is one data-dependent bit per round released
+  outside the accountant, so the true privacy loss is the reported epsilon **plus** that bit per
+  round. A rejected round charges the ledger nothing, which keeps the bookkeeping honest but does
+  not make the bit free. Testing the bound against the noised aggregate instead would make the
+  decision post-processing and close the gap; it would also change what the bound means as a
+  poisoning defence, so it is recorded here rather than done quietly.
 - **Per-client attribution of poisoning.** By design the coordinator cannot see who sent what. Only
   round-level rejection is available; sign-flip attacks inside the norm bound are undetected and
   measured above rather than hidden.

@@ -19,15 +19,26 @@ Two route groups exist:
   own, which is what makes the whole thing testable without sleeping.
 
 Nothing here returns an individual masked vector to anyone. The only vector that leaves the
-service is the noised aggregate, to the operator, after the round is accepted.
+service is the noised aggregate, to the operator, after the round is accepted -- and only when
+the service was built with a :class:`CentralPrivacy`. Without one the service fails closed and
+releases no vector at all, rather than handing out an unaccounted plaintext sum.
+
+What the service does **not** do is evaluate the model. It holds no holdout split and no
+labels -- the data stays with the silos, which is the entire point -- so
+``fedsecagg_global_holdout_auc`` is only ever set by the in-process runner in
+:mod:`federated_secure_aggregation.fl.simulation`. The served gauge stays unset, and
+MODEL_CARD.md says so.
 """
 
 from __future__ import annotations
 
 import base64
 from collections.abc import Callable
+from dataclasses import dataclass, field
 from typing import Any
 
+import numpy as np
+import numpy.typing as npt
 from fastapi import FastAPI, Request
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -41,6 +52,8 @@ from federated_secure_aggregation.core.security import (
     SiloPrincipal,
 )
 from federated_secure_aggregation.monitoring.metrics import RoundMetrics, create_round_metrics
+from federated_secure_aggregation.privacy.ledger import BudgetExhaustedError, BudgetLedger
+from federated_secure_aggregation.privacy.noise import MechanismVariant, add_central_noise
 from federated_secure_aggregation.secagg.coordinator import RoundResult, SecAggCoordinator
 from federated_secure_aggregation.secagg.errors import ProtocolStateError, QuorumError, SecAggError
 from federated_secure_aggregation.secagg.messages import (
@@ -54,9 +67,11 @@ from federated_secure_aggregation.secagg.messages import (
     UnmaskShares,
 )
 
-__all__ = ["CoordinatorService", "create_coordinator_app"]
+__all__ = ["CentralPrivacy", "CoordinatorService", "create_coordinator_app"]
 
 _log = get_logger("federated_secure_aggregation.service")
+
+FloatArray = npt.NDArray[np.float64]
 
 
 class StartRoundRequest(BaseModel):
@@ -112,21 +127,82 @@ class RoundOutcomeResponse(BaseModel):
     digest: str
     reason: str | None = None
     corrupt_share_holders: list[str] = Field(default_factory=list)
+    # None when the service runs without a :class:`CentralPrivacy`: secure aggregation only,
+    # no noise and no budget, which is a different thing from "epsilon is zero".
+    epsilon_spent: float | None = None
+
+
+class AggregateRelease(BaseModel):
+    """The one vector that leaves the service, and what it cost."""
+
+    round_id: int
+    survivors: list[str]
+    dimension: int
+    epsilon_spent: float
+    noise_multiplier: float
+    # Base64 of little-endian float64, the same encoding the protocol uses for vectors.
+    aggregate: str
+
+
+@dataclass(slots=True)
+class CentralPrivacy:
+    """The central-DP half of the coordinator: calibrated noise plus an enforced budget.
+
+    Trusted-coordinator central DP, and the name is chosen to say so. Secure aggregation stops
+    the coordinator from seeing *individual* updates; it does not stop it from seeing their sum,
+    and the noise is added to that sum here. Distributed and local DP are documented non-goals.
+
+    The ledger is consulted twice per round for two different reasons: before a round opens, so
+    a round that cannot be paid for is never run (rather than run and then discovered to be
+    unaffordable), and when an accepted round is released, which is the step that actually
+    spends the budget.
+    """
+
+    ledger: BudgetLedger
+    clip_norm: float
+    rng: np.random.Generator = field(default_factory=np.random.default_rng)
+    variant: MechanismVariant = MechanismVariant.CORRECT
+
+    def release(self, aggregate: FloatArray, survivors: int) -> tuple[FloatArray, float]:
+        """Charge one round and return the noised sum. Raises if the budget cannot cover it."""
+        epsilon = self.ledger.charge_round()
+        noised = add_central_noise(
+            aggregate,
+            self.rng,
+            noise_multiplier=self.ledger.noise_multiplier,
+            clip_norm=self.clip_norm,
+            survivors=max(survivors, 1),
+            variant=self.variant,
+        )
+        return noised, epsilon
 
 
 class CoordinatorService:
     """Holds the coordinator plus the per-round relay state the HTTP layer needs."""
 
-    def __init__(self, coordinator: SecAggCoordinator, metrics: RoundMetrics | None = None) -> None:
+    def __init__(
+        self,
+        coordinator: SecAggCoordinator,
+        metrics: RoundMetrics | None = None,
+        privacy: CentralPrivacy | None = None,
+    ) -> None:
         self.coordinator = coordinator
         self.metrics = metrics if metrics is not None else create_round_metrics()
+        self.privacy = privacy
         self._inbox: dict[str, dict[str, bytes]] = {}
         self._announcements: dict[MessageKind, dict[str, Any]] = {}
         self._last_result: RoundResult | None = None
+        self._release: AggregateRelease | None = None
 
     @property
     def last_result(self) -> RoundResult | None:
         return self._last_result
+
+    def release(self) -> AggregateRelease:
+        """The noised aggregate of the last accepted round, for the operator only."""
+        if self._release is None:
+            raise AppError(409, "not_available", "no accepted round has released an aggregate")
+        return self._release
 
     def announcement(self, kind: MessageKind) -> dict[str, Any]:
         payload = self._announcements.get(kind)
@@ -143,10 +219,19 @@ class CoordinatorService:
         }
 
     def start_round(self, round_id: int) -> RoundOpened:
+        if self.privacy is not None and not self.privacy.ledger.can_run_round():
+            spent = self.privacy.ledger.epsilon_spent()
+            raise AppError(
+                409,
+                "budget_exhausted",
+                f"the privacy budget is spent (epsilon {spent:.4f} of "
+                f"{self.privacy.ledger.target_epsilon:.4f}); this run is over",
+            )
         nonce = self.coordinator.start_round(round_id)
         self._inbox.clear()
         self._announcements.clear()
         self._last_result = None
+        self._release = None
         scheme = self.coordinator.scheme
         return RoundOpened(
             round_id=round_id,
@@ -180,14 +265,21 @@ class CoordinatorService:
         if stage is RoundStage.UNMASK:
             result = self.coordinator.finalize()
             self._last_result = result
+            epsilon = self._release_aggregate(result)
             self.metrics.observe_round(
                 duration_seconds=result.duration_seconds,
                 participants=len(result.survivors),
                 dropouts=len(result.dropouts),
                 accepted=result.accepted,
                 failed=result.stage is RoundStage.FAILED,
-                epsilon_spent=0.0,
+                # The gauge reports the run's cumulative epsilon, so it must keep reading the
+                # ledger on a rejected round too: the budget does not un-spend itself.
+                epsilon_spent=(
+                    self.privacy.ledger.epsilon_spent() if self.privacy is not None else 0.0
+                ),
                 aggregate_norm=result.aggregate_norm,
+                # The service has no holdout split and no labels; only the in-process runner
+                # can set this one. See the module docstring.
                 holdout_auc=None,
                 bytes_received=result.bytes_received,
             )
@@ -203,8 +295,40 @@ class CoordinatorService:
                 digest=result.digest(),
                 reason=result.reason,
                 corrupt_share_holders=list(result.corrupt_share_holders),
+                epsilon_spent=epsilon,
             ).model_dump(mode="json")
         raise AppError(409, "wrong_stage", f"round stage {stage} cannot be advanced")
+
+    def _release_aggregate(self, result: RoundResult) -> float | None:
+        """Noise and publish an accepted round's sum, and return what the run has spent.
+
+        A rejected or failed round releases nothing and is charged nothing: there is no vector
+        to noise. That the *reject decision itself* is a data-dependent release the accountant
+        does not charge for is a real caveat, stated in README Non-goals and MODEL_CARD.md
+        rather than papered over here.
+        """
+        if self.privacy is None:
+            return None
+        if not result.accepted or result.aggregate is None:
+            return self.privacy.ledger.epsilon_spent()
+        try:
+            noised, epsilon = self.privacy.release(result.aggregate, len(result.survivors))
+        except BudgetExhaustedError as exc:
+            # start_round checks first, so this is the race, not the common path: report it and
+            # release nothing rather than hand out a sum the budget cannot pay for.
+            _log.warning("budget_exhausted_at_release", round_id=result.round_id, reason=str(exc))
+            return self.privacy.ledger.epsilon_spent()
+        self._release = AggregateRelease(
+            round_id=result.round_id,
+            survivors=list(result.survivors),
+            dimension=int(noised.size),
+            epsilon_spent=epsilon,
+            noise_multiplier=self.privacy.ledger.noise_multiplier,
+            aggregate=base64.b64encode(np.ascontiguousarray(noised, dtype="<f8").tobytes()).decode(
+                "ascii"
+            ),
+        )
+        return epsilon
 
 
 def _translate(error: SecAggError | ProtocolMessageError) -> AppError:
@@ -271,6 +395,17 @@ def create_coordinator_app(
         del request
         _log.info("stage_advance", key_id=principal.key_id, stage=str(service.coordinator.stage))
         return _guard(service.advance)
+
+    @app.get("/v1/rounds/aggregate", response_model=AggregateRelease)
+    async def aggregate(principal: OperatorPrincipal) -> AggregateRelease:
+        """Operator route: the noised aggregate of the last accepted round.
+
+        Operator-only because a silo contributed to this sum and must not read it back: with
+        the sum and its own update in hand, a silo learns the sum of everyone else's, which is
+        exactly what secure aggregation is for at n = 2 and a real erosion at any n.
+        """
+        _log.info("aggregate_released", key_id=principal.key_id)
+        return service.release()
 
     @app.post("/v1/rounds/key-advertisements", response_model=Accepted)
     async def key_advertisement(

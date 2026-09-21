@@ -62,6 +62,15 @@ services:
       APP_MODEL_DIMENSION: "13"
       APP_SECAGG_THRESHOLD: "3"
       APP_CLIP_NORM: "1.0"
+      # Central DP over the aggregate. The multiplier is calibrated so that 20 rounds spend
+      # exactly the target epsilon:
+      #   uv run python -c "from federated_secure_aggregation.privacy.accountant import       #     calibrate_noise_multiplier; print(calibrate_noise_multiplier(
+      #     target_epsilon=8.0, delta=1e-5, steps=20, sample_rate=1.0))"  -> 2.8536
+      # Run more rounds than that and the ledger refuses to open them, which is the point.
+      APP_NOISE_MULTIPLIER: "2.8536"
+      APP_TARGET_EPSILON: "8.0"
+      APP_TARGET_DELTA: "0.00001"
+      APP_DATA_DIR: /var/lib/fedsecagg
       # Long enough that a slow silo is not dropped, short enough that a dead one does not
       # stall the round for ever. A stage closes when everyone answers or this elapses.
       APP_STAGE_TIMEOUT_SECONDS: "20"
@@ -70,6 +79,9 @@ services:
     volumes:
       - ./secrets/coordinator_identity.json:/run/secrets/coordinator_identity.json:ro
       - ./secrets/roster.json:/run/secrets/roster.json:ro
+      # The one writable path: the budget ledger survives a restart, so the epsilon the
+      # coordinator reports is a statement about the data and not about its uptime.
+      - coordinator-state:/var/lib/fedsecagg
     networks: [federation]
     restart: unless-stopped
     <<: *hardening
@@ -139,6 +151,9 @@ services:
     volumes:
       - ./secrets/silo_04_identity.json:/run/secrets/identity.json:ro
       - ./secrets/roster.json:/run/secrets/roster.json:ro
+
+volumes:
+  coordinator-state:
 
 networks:
   # Internal only: the silos talk to the coordinator and to nothing else. The coordinator's

@@ -296,6 +296,9 @@ jobs:
           docker compose wait operator
           docker compose logs operator | tee operator.log
           grep -q "rounds accepted" operator.log
+          # The served coordinator runs the DP pipeline, so every accepted round costs budget
+          # and says so. A run that printed no epsilon released an unaccounted aggregate.
+          grep -q "epsilon spent" operator.log
       - name: no silo container may hold another silo's key
         run: |
           listing=$(docker compose exec -T silo-02 ls /run/secrets | sort | xargs)
