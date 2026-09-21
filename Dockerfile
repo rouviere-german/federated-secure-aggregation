@@ -21,6 +21,16 @@ COPY pyproject.toml uv.lock README.md LICENSE ./
 RUN uv sync --frozen --no-dev --no-install-project
 COPY src ./src
 RUN uv sync --frozen --no-dev --no-editable
+# Drop the vendored test suites of the four scientific wheels (~99 MB of the 388 MB venv).
+# Nothing in the coordinator or a silo imports them, and the public test helpers live outside
+# these directories (numpy.testing, pandas._testing, scipy._lib), so what the application can
+# import is unchanged. Compiled bytecode is deliberately *kept*: the runtime filesystem is
+# read-only, so a .pyc that is missing at start-up can never be written.
+RUN set -eux; \
+    site=/opt/venv/lib/python3.12/site-packages; \
+    for pkg in numpy scipy pandas sklearn; do \
+        find "$site/$pkg" -type d -name tests -prune -exec rm -rf {} +; \
+    done
 
 FROM ${PYTHON_IMAGE} AS runtime
 LABEL org.opencontainers.image.title="federated-secure-aggregation" \
