@@ -152,7 +152,7 @@ real ASGI app.
 
 ## Results
 
-Measured with `uv run python tasks.py bench` on 2026-09-20: Windows 10 (10.0.19045), Intel64
+Measured with `uv run python tasks.py bench` on 2026-09-21: Windows 10 (10.0.19045), Intel64
 Family 6 Model 158, 6 logical CPUs, Python 3.12.14, CPU only. Every run printed "all benchmarks
 within thresholds". CI runs the same command against the looser limits in `bench/thresholds.json`.
 These are single-machine numbers for catching regressions, not performance claims.
@@ -165,17 +165,19 @@ clients drop out. It did for every configuration below (`exact_fraction = 1.0`),
 
 | clients | threshold | dropouts | survivors | exact | seconds | bytes/client |
 |---:|---:|---:|---:|---|---:|---:|
-| 3 | 2 | 0 | 3 | yes | 0.0271 | 4 675 |
-| 3 | 2 | 1 | 2 | yes | 0.0113 | 3 522 |
-| 5 | 3 | 0 | 5 | yes | 0.0265 | 5 391 |
-| 5 | 3 | 2 | 3 | yes | 0.0242 | 3 962 |
-| 10 | 6 | 0 | 10 | yes | 0.0839 | 7 181 |
-| 10 | 6 | 4 | 6 | yes | 0.0774 | 5 639 |
-| 20 | 11 | 0 | 20 | yes | 0.3189 | 10 762 |
-| 20 | 11 | 9 | 11 | yes | 0.2918 | 8 770 |
+| 3 | 2 | 0 | 3 | yes | 0.0263 | 4 745 |
+| 3 | 2 | 1 | 2 | yes | 0.0116 | 3 592 |
+| 5 | 3 | 0 | 5 | yes | 0.0315 | 5 461 |
+| 5 | 3 | 2 | 3 | yes | 0.0246 | 4 032 |
+| 10 | 6 | 0 | 10 | yes | 0.1257 | 7 251 |
+| 10 | 6 | 4 | 6 | yes | 0.0822 | 5 709 |
+| 20 | 11 | 0 | 20 | yes | 0.8199 | 10 832 |
+| 20 | 11 | 9 | 11 | yes | 0.2992 | 8 840 |
 
 Bytes per client grow with the number of peers (one Shamir share and one pairwise mask each), and
-a 20-silo round costs about 0.32 s of wall clock in process.
+a 20-silo round costs about 0.8 s of wall clock in process. The per-client figures include the
+self-mask seed commitment added to each key advertisement (about 70 bytes per client), which is
+what lets the coordinator verify a reconstructed seed instead of trusting it.
 
 ### Utility: what privacy costs — `bench/bench_utility.py --check`
 
@@ -264,17 +266,20 @@ realistic form of the bug.
 
 Norm bound = survivors x clip_norm = 5.0.
 
-| attacker | scale | rounds rejected | holdout AUC | mean aggregate norm |
+`rejection rate` is the fraction of the run's 10 rounds that were rejected, so 1.00 means every
+round.
+
+| attacker | scale | rejection rate | holdout AUC | mean aggregate norm |
 |---|---:|---:|---:|---:|
-| none | 0 | 0 | 0.8745 | 1.4599 |
-| scaled | 1.5 | 0 | 0.8756 | 1.3141 |
-| scaled | 2 | 1 | 0.5000 | 5.1473 |
-| scaled | 3 | 1 | 0.5000 | 6.3352 |
-| scaled | 5 | 1 | 0.5000 | 8.8860 |
-| scaled | 10 | 1 | 0.5000 | 12.86 |
-| scaled | 40 | 1 | 0.5000 | 14.72 |
-| sign-flip x1 | 1 | 0 | 0.8708 | 1.8435 |
-| sign-flip x2 | 1 | 0 | 0.8671 | 2.0611 |
+| none | 0 | 0.00 | 0.8745 | 1.4599 |
+| scaled | 1.5 | 0.00 | 0.8756 | 1.3141 |
+| scaled | 2 | 1.00 | 0.5000 | 5.1473 |
+| scaled | 3 | 1.00 | 0.5000 | 6.3352 |
+| scaled | 5 | 1.00 | 0.5000 | 8.8860 |
+| scaled | 10 | 1.00 | 0.5000 | 12.86 |
+| scaled | 40 | 1.00 | 0.5000 | 14.72 |
+| sign-flip x1 | 1 | 0.00 | 0.8708 | 1.8435 |
+| sign-flip x2 | 1 | 0.00 | 0.8671 | 2.0611 |
 
 Scaled attacks at 2x and above are caught **100% of the time** with no false positives on clean
 rounds. That is the whole of the defense, and the last two rows are the honest half of the result:
@@ -287,18 +292,18 @@ need ZK range proofs and is a documented non-goal.
 
 | benchmark | runs | p50 (us) | p95 (us) |
 |---|---:|---:|---:|
-| pairwise_mask_1k | 500 | 102.0 | 105.2 |
-| prg_expand_1k | 2000 | 12.8 | 13.3 |
-| mask_vector_1k_10_peers | 100 | 1 233 | 1 274 |
-| shamir_split_32b_5of10 | 2000 | 125.8 | 153.9 |
-| shamir_combine_32b_5of10 | 2000 | 628.2 | 695.7 |
-| ring_add_1k | 5000 | 14.0 | 14.5 |
-| quantize_encode_1k | 5000 | 32.9 | 36.8 |
-| message_sign | 2000 | 107.8 | 116.8 |
-| message_verify | 2000 | 131.1 | 138.4 |
-| rdp_epsilon_20_steps | 2000 | 23.1 | 26.0 |
-| rdp_curve_all_orders | 50 | 6 855 | 7 042 |
-| drift_check_10k_vs_10k | 30 | 2 614 | 2 821 |
+| pairwise_mask_1k | 500 | 102.6 | 112.6 |
+| prg_expand_1k | 2000 | 12.9 | 15.2 |
+| mask_vector_1k_10_peers | 100 | 1 289 | 1 395 |
+| shamir_split_32b_5of10 | 2000 | 137.2 | 161.9 |
+| shamir_combine_32b_5of10 | 2000 | 656.0 | 767.8 |
+| ring_add_1k | 5000 | 14.0 | 16.0 |
+| quantize_encode_1k | 5000 | 33.3 | 40.2 |
+| message_sign | 2000 | 113.9 | 133.4 |
+| message_verify | 2000 | 133.6 | 151.2 |
+| rdp_epsilon_20_steps | 2000 | 22.9 | 25.7 |
+| rdp_curve_all_orders | 50 | 6 969 | 7 503 |
+| drift_check_10k_vs_10k | 30 | 2 696 | 2 864 |
 | rate_limiter_check | 20000 | 1.8 | 1.9 |
 
 ## Security

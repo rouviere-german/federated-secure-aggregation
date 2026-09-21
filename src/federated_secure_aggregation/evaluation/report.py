@@ -83,8 +83,13 @@ def flatten(results: Mapping[str, Mapping[str, float]]) -> dict[str, float]:
 
 def write_results(path: Path, payload: Mapping[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
+    # newline="" keeps the "\n" as written rather than letting Windows expand it to CRLF:
+    # these are committed bench artifacts, and their bytes must not depend on the OS that
+    # produced them.
     path.write_text(
-        json.dumps(payload, indent=2, sort_keys=True, default=str) + "\n", encoding="utf-8"
+        json.dumps(payload, indent=2, sort_keys=True, default=str) + "\n",
+        encoding="utf-8",
+        newline="",
     )
 
 

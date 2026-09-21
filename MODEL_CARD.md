@@ -15,7 +15,7 @@ describes that simulation and nothing else.
   by federated averaging over 5 silos. A 1-hidden-layer MLP (`MLPClassifier`) is implemented and
   gradient-tested but is not the registered model.
 - **Owner:** Rouviere German
-- **Date:** 2026-09-20
+- **Date:** 2026-09-21
 - **License:** MIT (code). Data is synthetic and generated in-process; no external dataset.
 - **Artifact format:** `.npz` with `allow_pickle=False`. Never pickle
   (`tests/unit/test_no_pickle.py::test_source_tree_has_no_pickle_family_serialization`).
@@ -54,7 +54,7 @@ describes that simulation and nothing else.
 - **Metrics:** ROC AUC (ranking quality, the decision-relevant metric for risk scoring) and log
   loss (calibration). Both are cross-checked against scikit-learn
   (`tests/unit/test_metrics_and_data.py::test_roc_auc_matches_scikit_learn`).
-- **Results:** from `uv run python bench/bench_utility.py --check` on 2026-09-20 (Windows 10,
+- **Results:** from `uv run python bench/bench_utility.py --check` on 2026-09-21 (Windows 10,
   6 logical CPUs, Python 3.12.14, CPU only):
 
   | Setting (alpha = 1) | AUC | log loss |

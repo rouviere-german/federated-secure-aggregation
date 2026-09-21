@@ -38,8 +38,19 @@ from federated_secure_aggregation.crypto.keys import IdentityKeyPair
 from federated_secure_aggregation.fl.experiment import silo_ids
 
 
+def _write_text(path: Path, text: str) -> None:
+    """Write UTF-8 with LF endings, whatever the host.
+
+    ``newline=""`` matters more than it looks: without it Windows expands every ``\\n`` to
+    ``\\r\\n``, and ``compose.env`` is sourced by a POSIX shell (``set -a && . ./secrets/
+    compose.env``). Every value would then carry a trailing carriage return -- a key digest
+    that matches nothing, and no error message pointing at why.
+    """
+    path.write_text(text, encoding="utf-8", newline="")
+
+
 def _write(path: Path, payload: dict[str, str]) -> None:
-    path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    _write_text(path, json.dumps(payload, indent=2, sort_keys=True) + "\n")
     # Best effort on POSIX; Windows ignores the mode bits.
     path.chmod(0o600)
 
@@ -79,7 +90,7 @@ def generate(out: Path, silos: int) -> list[Path]:
         written.append(silo_path)
 
     roster_path = out / "roster.json"
-    roster_path.write_text(json.dumps(roster, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    _write_text(roster_path, json.dumps(roster, indent=2, sort_keys=True) + "\n")
     written.append(roster_path)
 
     written.append(write_compose_env(out, sorted(roster)))
@@ -102,7 +113,7 @@ def write_compose_env(out: Path, ids: list[str]) -> Path:
     ]
     lines.append("APP_SILO_API_KEY_SHA256=" + ",".join(silo_keys[key][1] for key in ids))
     path = out / "compose.env"
-    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    _write_text(path, "\n".join(lines) + "\n")
     path.chmod(0o600)
     return path
 
