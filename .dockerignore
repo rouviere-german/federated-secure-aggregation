@@ -20,6 +20,17 @@ artifacts
 data
 .env
 .env.*
+
+# Federation key material. scripts/generate_identities.py writes secrets/ into the repository
+# root, and the documented workflow is exactly that followed by `docker compose up --build`.
+# Without these lines every private Ed25519 key, plus the plaintext transport keys in
+# compose.env, is packed into the build context and kept in the BuildKit context cache.
+# Nothing COPYs them into an image, but a build context is not a private place.
+# .gitignore excludes the same paths.
+secrets
+**/*_identity.json
+roster.json
+compose.env
 *.md
 !README.md
 Dockerfile
