@@ -146,9 +146,19 @@ smoke test, trivy scan, SBOM generation and the five-silo compose run with two s
 mid-round are verified in CI (`.github/workflows/ci.yml`, jobs `docker` and `compose`); **Docker
 was not run locally as part of building this repo.**
 
+The served coordinator runs the full central-DP pipeline, not just secure aggregation: it adds
+the calibrated Gaussian noise to each accepted round's sum, charges the RDP budget ledger,
+refuses (409 `budget_exhausted`) to open a round the budget cannot pay for, and offers the
+noised aggregate on `GET /v1/rounds/aggregate` — an **operator-only** route, because a silo that
+could read the sum back would learn the sum of everyone else's updates from its own. The ledger
+is persisted on a named volume so a container restart does not reset the privacy budget. What
+the service cannot do is evaluate the model: it holds no holdout split and no labels, so
+`fedsecagg_global_holdout_auc` is produced by the in-process runner only, and AUC per round
+comes from `tasks.py demo` rather than from the coordinator.
+
 The same two loops are covered without Docker by
 `tests/integration/test_silo_runner.py`, which runs five silo threads and an operator against the
-real ASGI app.
+real ASGI app, and the DP wiring by `tests/integration/test_service_privacy.py`.
 
 ## Results
 
