@@ -1,0 +1,12 @@
+# The repository is consumed on Linux: CI runners, the Docker image and `docker compose` all
+# read these files through a POSIX shell. A CRLF `.env.example` sourced with `set -a && . ...`
+# gives every value a trailing carriage return, which turns an API key digest into one that
+# matches nothing -- so line endings here are correctness, not style.
+#
+# Everything text is stored and checked out LF, whatever the developer's platform.
+* text=auto eol=lf
+
+# Binary: never touched.
+*.png binary
+*.npz binary
+*.ico binary
