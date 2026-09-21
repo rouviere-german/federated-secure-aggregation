@@ -109,6 +109,13 @@ _EVIDENCE = re.compile(
     r"`((?:tests|bench|scripts)/[A-Za-z0-9_./-]+\.py)(?:::([A-Za-z_][A-Za-z0-9_]*))?`"
     r"|`(\.github/workflows/[A-Za-z0-9_.-]+\.ya?ml)#([A-Za-z0-9_-]+)`"
 )
+# The same idea for source docstrings, which cite tests as evidence in the two forms the code
+# base actually uses: ``tests/x.py::test_y`` and ``tests/x.py``, test ``test_y``.
+_SOURCE_CITATION = re.compile(
+    r"``(?P<file>tests/[A-Za-z0-9_./-]+\.py)"
+    r"(?:::(?P<test>[A-Za-z_][A-Za-z0-9_]*))?``"
+    r"(?:,?\s+test\s+``(?P<test2>[A-Za-z_][A-Za-z0-9_]*)``)?"
+)
 # Pickle-family imports, plus pandas' pickle I/O (the ML kit ships pandas).
 _BANNED_SERIALIZATION = re.compile(
     r"^\s*(?:import|from)\s+(?:pickle|cPickle|_pickle|dill|joblib|cloudpickle|shelve)\b"
@@ -344,6 +351,34 @@ def check_evidence(root: Path, report: Report, document: str, *, minimum: int) -
             )
 
 
+def check_source_citations(root: Path, report: Report, package: str) -> None:
+    """Docstrings cite tests as evidence too, so they must point at tests that exist.
+
+    Two modules here cited a ``tests/integration/test_aggregation_modes.py`` that had never
+    existed, and nothing caught it: the evidence scan only ever looked at CLAIMS.md and
+    docs/THREAT_MODEL.md. A reader who follows a citation and finds nothing has no way to tell
+    a typo from a claim with no evidence behind it, so this makes that class of rot fail the
+    gate rather than survive in a docstring.
+
+    Only ``tests/...py`` paths are checked: bench and scripts references appear in prose about
+    how to run things, not as evidence, and a module's own path is not a citation.
+    """
+    for path in sorted((root / "src" / package).rglob("*.py")):
+        source = path.read_text(encoding="utf-8").replace("\r\n", "\n")
+        where = path.relative_to(root).as_posix()
+        for match in _SOURCE_CITATION.finditer(source):
+            file_ref = match.group("file")
+            test_name = match.group("test") or match.group("test2")
+            target = root / file_ref
+            report.require(target.is_file(), f"{where}: cited test file {file_ref} does not exist")
+            if test_name and target.is_file():
+                cited = target.read_text(encoding="utf-8")
+                report.require(
+                    re.search(rf"^\s*(?:async\s+)?def {test_name}\(", cited, re.M),
+                    f"{where}: cited test {file_ref}::{test_name} does not exist",
+                )
+
+
 def check_threat_model(root: Path, report: Report) -> None:
     threat_model = _read(root, "docs/THREAT_MODEL.md")
     for category in STRIDE:
@@ -365,6 +400,7 @@ def run_checks(root: Path) -> Report:
     check_ci(root, report)
     check_containers(root, report)
     check_hygiene(root, report, package)
+    check_source_citations(root, report, package)
     check_threat_model(root, report)
     check_evidence(root, report, "CLAIMS.md", minimum=1)
     check_evidence(root, report, "docs/THREAT_MODEL.md", minimum=1)

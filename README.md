@@ -179,8 +179,9 @@ a 20-silo round costs about 0.32 s of wall clock in process.
 
 ### Utility: what privacy costs — `bench/bench_utility.py --check`
 
-AUC on a held-out split, 1 345-parameter model, Dirichlet non-IID partitions. "federated
-(protocol)" runs the full masking protocol; "federated" is the same arithmetic in the clear.
+AUC on a held-out split, 13-parameter logistic regression (`experiment.logistic_model()`, one
+weight per feature plus a bias), Dirichlet non-IID partitions. "federated (protocol)" runs the
+full masking protocol; "federated" is the same arithmetic in the clear.
 
 | alpha | model | epsilon | noise z | AUC | log loss |
 |---:|---|---|---:|---:|---:|
@@ -221,6 +222,9 @@ the final model delta and the canary directions, against 1 024 fresh random dire
 empirical mu and a 95% lower confidence bound. A variant is **flagged** when its lower bound exceeds
 the claimed epsilon.
 
+Parameters (`AuditRunConfig`): 30 rounds, noise multiplier 4.0, 1 345-parameter MLP (96 hidden
+units), 48 canaries, 1 024 reference directions, **canary scale 20.0**.
+
 | variant | breaks DP? | mu hat | eps hat | eps low (95%) | claimed eps | flagged |
 |---|---|---:|---:|---:|---:|---|
 | correct | no | 1.1736 | 5.2740 | 3.7665 | 6.8379 | no |
@@ -237,6 +241,24 @@ should under-estimate, never over-estimate. `mu_recovery_ratio = 0.857`.
 `clip_after_noise` is included deliberately as a *near miss*: clipping after adding noise is a real
 bug, but at this noise scale it barely changes the observable distribution, so the audit does not
 catch it. An empirical audit rules out gross errors, not subtle ones — see Non-goals.
+
+**The canary scale is load bearing, so it is stated rather than buried in a dataclass.** Each
+canary submits 20x the clip norm, so `no_clipping` is detected by measuring a 20x-oversized
+client — not a missing clip in general. Re-running the same audit with `canary_scale = 1.0`
+makes that variant numerically indistinguishable from the correct one, and it is not flagged:
+
+| canary scale | variant | mu hat | eps low (95%) | flagged |
+|---:|---|---:|---:|---|
+| 20.0 | correct | 1.1736 | 3.7665 | no |
+| 20.0 | no_clipping | 5.0902 | 31.5666 | **yes** |
+| 1.0 | correct | 1.1736 | 3.7665 | no |
+| 1.0 | no_clipping | 1.1733 | 3.7648 | no |
+
+Produced with `AuditRunConfig(seed=20260920, canary_scale=...)` over
+`build_experiment(n_rows=6_000, n_silos=5, alpha=1.0, seed=20260920)`, the same inputs as the
+table above. So the audit's power against a missing clip is a statement about outliers, and the
+threat it actually covers is "a client whose update is far larger than the clip", which is the
+realistic form of the bug.
 
 ### Poisoning: what the norm bound can and cannot do — `bench/bench_poisoning.py --check`
 
@@ -336,7 +358,9 @@ integrity. A malicious coordinator is a non-goal.
 - **A privacy audit that proves correctness.** The canary audit is a statistical **lower** bound on
   privacy loss. It reliably catches gross errors (no clipping, weak noise, averaged sensitivity)
   and demonstrably misses at least one subtle one (`clip_after_noise`). Passing the audit is not a
-  proof that the implementation is correct.
+  proof that the implementation is correct. Its power against a missing clip also depends on the
+  canary scale: at the shipped 20.0 it detects a 20x-oversized client, and at 1.0 it does not
+  detect the missing clip at all (measured above).
 - **Production-grade cryptography.** Shamir sharing is over GF(2^8) for clarity, masks use AES-CTR
   as a PRG, and nothing here is constant-time beyond what `cryptography` provides. This is a
   faithful, readable implementation for study, not a hardened library.

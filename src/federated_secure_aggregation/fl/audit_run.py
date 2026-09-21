@@ -4,7 +4,8 @@ The audit is a *measurement of the differential-privacy mechanism*, not of the t
 runs on the plaintext aggregation path. That is legitimate for two reasons made checkable
 elsewhere: the secure path is proven to reconstruct the plaintext sum bit for bit
 (``tests/unit/test_secagg_exactness.py``), and the two paths are proven to produce the same
-global model from the same seed (``tests/integration/test_aggregation_modes.py``). Running the
+global model from the same seed (``tests/integration/test_federated_run.py``, test
+``test_the_secure_and_plaintext_paths_produce_the_same_model``). Running the
 audit through the protocol as well would multiply its cost without changing what it measures.
 
 Two conditions are deliberately equalized across all variants so the comparison is fair:

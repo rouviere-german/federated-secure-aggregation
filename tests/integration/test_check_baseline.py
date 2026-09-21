@@ -85,6 +85,43 @@ def test_dangling_claim_reference_fails(repo_root: Path, repo_copy: Path) -> Non
     assert any("test_does_not_exist" in item for item in failures(repo_root, repo_copy))
 
 
+def _cite(repo_copy: Path, docstring: str) -> None:
+    """Drop a module into the package whose docstring makes an evidence claim."""
+    package = next(path.parent for path in (repo_copy / "src").glob("*/__init__.py"))
+    (package / "cited.py").write_text(f'"""{docstring}"""\n', encoding="utf-8")
+
+
+def test_a_source_docstring_citing_a_missing_test_file_fails(
+    repo_root: Path, repo_copy: Path
+) -> None:
+    """Docstrings make evidence claims too, and they rot the same way.
+
+    Two modules here cited ``tests/integration/test_aggregation_modes.py`` as the proof that
+    the secure and plaintext paths agree. That file never existed -- the test lives in
+    test_federated_run.py -- and the gate never noticed, because it only scanned CLAIMS.md and
+    docs/THREAT_MODEL.md.
+    """
+    _cite(repo_copy, "Proved by ``tests/unit/test_nothing_like_this.py``.")
+    assert any("test_nothing_like_this.py" in item for item in failures(repo_root, repo_copy))
+
+
+def test_a_source_docstring_citing_a_missing_test_function_fails(
+    repo_root: Path, repo_copy: Path
+) -> None:
+    _cite(repo_copy, "See ``tests/unit/test_redaction.py``, test ``test_absent_from_that_file``.")
+    assert any("test_absent_from_that_file" in item for item in failures(repo_root, repo_copy))
+
+
+def test_a_source_docstring_citing_a_real_test_passes(repo_root: Path, repo_copy: Path) -> None:
+    """The check must not fire on references that are correct."""
+    _cite(
+        repo_copy,
+        "Proved by ``tests/integration/test_check_baseline.py``, test "
+        "``test_template_passes_its_own_baseline``.",
+    )
+    assert not [item for item in failures(repo_root, repo_copy) if "cited.py" in item]
+
+
 def test_unpinned_base_image_fails(repo_root: Path, repo_copy: Path) -> None:
     dockerfile = repo_copy / "Dockerfile"
     text = dockerfile.read_text(encoding="utf-8")

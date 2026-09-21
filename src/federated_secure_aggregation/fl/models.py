@@ -6,8 +6,9 @@ what lets the protocol treat a model update as an anonymous element of ``R^d``.
 
 Gradients are written out rather than obtained from an autodiff framework. That keeps the
 dependency list free of torch or tensorflow (the whole suite must run on a CPU in minutes), and
-it makes the gradient itself testable: ``tests/unit/test_models.py`` checks every analytic
-gradient against a central finite difference.
+it makes the gradient itself testable: ``tests/unit/test_models_and_training.py``, test
+``test_logistic_gradient_matches_finite_differences`` (and its MLP counterpart), checks every
+analytic gradient against a central finite difference.
 
 Numerical care worth noting:
 

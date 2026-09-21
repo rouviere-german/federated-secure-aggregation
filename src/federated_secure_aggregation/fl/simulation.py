@@ -14,7 +14,8 @@ One round is:
 ``AggregationMode.SECURE`` runs the real protocol: X25519 key agreement, pairwise masks, Shamir
 shares, dropout recovery, signatures. ``AggregationMode.PLAINTEXT`` sums the same clipped
 updates directly. The two are not "the real one and a toy": they are proven to produce the same
-global model for the same seed in ``tests/integration/test_aggregation_modes.py``, which is what
+global model for the same seed in ``tests/integration/test_federated_run.py``, test
+``test_the_secure_and_plaintext_paths_produce_the_same_model``, which is what
 makes it legitimate to run the longer privacy and utility experiments on the faster path.
 
 Rejected rounds are rolled back completely: the global parameters, the holdout metrics and the

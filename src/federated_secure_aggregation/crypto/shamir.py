@@ -70,11 +70,11 @@ def split(
     n_bytes = len(secret)
     coefficients = np.zeros((threshold, n_bytes), dtype=np.uint8)
     coefficients[0] = np.frombuffer(secret, dtype=np.uint8)
-    if threshold > 1:
-        noise = random_bytes((threshold - 1) * n_bytes)
-        if len(noise) != (threshold - 1) * n_bytes:
-            raise RuntimeError("random_bytes returned the wrong number of bytes")
-        coefficients[1:] = np.frombuffer(noise, dtype=np.uint8).reshape(threshold - 1, n_bytes)
+    # threshold >= 2 is enforced above, so there is always at least one random coefficient.
+    noise = random_bytes((threshold - 1) * n_bytes)
+    if len(noise) != (threshold - 1) * n_bytes:
+        raise RuntimeError("random_bytes returned the wrong number of bytes")
+    coefficients[1:] = np.frombuffer(noise, dtype=np.uint8).reshape(threshold - 1, n_bytes)
     points = np.arange(1, shares + 1, dtype=np.uint8)
     evaluations = eval_poly(coefficients, points)
     return [Share(int(x), bytes(row)) for x, row in zip(points, evaluations, strict=True)]

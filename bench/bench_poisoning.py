@@ -171,12 +171,12 @@ def main(argv: list[str] | None = None) -> int:
     )
     print(
         markdown_table(
-            ["attacker", "scale", "rounds rejected", "holdout AUC", "mean aggregate norm"],
+            ["attacker", "scale", "rejection rate", "holdout AUC", "mean aggregate norm"],
             [
                 [
                     row["attacker"],
                     row["scale"],
-                    row["rejection_rate"],
+                    f"{float(row['rejection_rate']):.2f}",
                     row["holdout_auc"],
                     row["mean_aggregate_norm"],
                 ]

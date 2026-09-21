@@ -99,7 +99,8 @@ describes that simulation and nothing else.
   bound to the noised aggregate would make the decision post-processing and close the gap; see
   README Non-goals for why that trade is recorded rather than taken.
 - **Audited epsilon:** from `uv run python bench/bench_audit.py --check`, 48 canary clients against
-  1 024 reference directions, 30 rounds, claimed epsilon 6.8379:
+  1 024 reference directions, 30 rounds, noise multiplier 4.0, 1 345-parameter MLP, **canary scale
+  20.0**, claimed epsilon 6.8379:
 
   | variant | breaks DP? | mu hat | eps low (95%) | flagged |
   |---|---|---:|---:|---|
@@ -112,6 +113,10 @@ describes that simulation and nothing else.
   The correct implementation's empirical mu (1.1736) sits below the theoretical mu (1.3693), which
   is the right direction for a lower bound. All three broken variants are flagged; CI fails
   otherwise. See [ADR 0004](docs/adr/0004-ship-broken-dp-variants-as-audit-tests.md).
+- **What `no_clipping` detection depends on.** Each canary submits 20x the clip norm, so that row
+  measures a 20x-oversized client rather than a missing clip in general. At `canary_scale = 1.0`
+  the same variant gives mu_hat 1.1733 against the correct implementation's 1.1736 and is not
+  flagged. The audit's power against this bug is a statement about outliers; see README.
 
 ## Robustness, drift and monitoring
 

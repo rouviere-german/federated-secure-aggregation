@@ -2,7 +2,8 @@
 
 ``roc_auc`` is the rank-based form of the Mann-Whitney U statistic with ties averaged, which is
 exactly equivalent to the area under the ROC curve and costs one sort. It is cross-checked
-against scikit-learn in ``tests/unit/test_metrics.py``, and scikit-learn is also what the
+against scikit-learn in ``tests/unit/test_metrics_and_data.py``, test
+``test_roc_auc_matches_scikit_learn``, and scikit-learn is also what the
 centralized baseline uses, so the federated numbers are compared against an independent
 implementation rather than against this one.
 """
